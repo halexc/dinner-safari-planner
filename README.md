@@ -1,4 +1,4 @@
-# Cykelfest Routing
+# Dinner Safari Routing
 
 Python foundation for a desktop dinner safari planner: participants cycle between
 appetizer, main dish, and dessert hosts.
@@ -7,6 +7,9 @@ For a step-by-step Windows or Mac setup, see
 [INSTALL (For Dummies).md](<INSTALL (For Dummies).md>). Run `install.bat` on Windows
 or `install.command` on Mac to set up Python dependencies and create an icon launcher.
 The application uses `res/icon.ico` on Windows and `res/icon.icns` on Mac.
+
+For a tour of all five views, planning workflows, and file operations, see the
+[Bike Party user guide](docs/README.md).
 
 ## Environment
 
@@ -136,8 +139,10 @@ System preferences.
 
 1. In Map, click **+ Add**. The scrollable picker lists only pairings with
    no route entry. Click **Select** or double-click a pairing; **Cancel**
-   leaves the workspace unchanged. The pairing opens in Selected route.
-2. Click **Edit on Map**. Click an eligible address to fill the first empty course,
+   leaves the workspace unchanged. The pairing opens in Selected route and
+   immediately enters **Edit on Map** mode. For an existing route, select it and
+   click **Edit on Map**.
+2. Click an eligible address to fill the first empty course,
    preserving any courses already assigned. Or hold the left mouse button on an
    address and drag to another address. Dragging from the current main dish host
    sets dessert; dragging from any other address replaces the route with appetizer
@@ -193,9 +198,9 @@ when needed, new course-specific stops are created only on Save. Abandoned draft
 and abandoned sections do not create committed stop records. Hosts without
 coordinates cannot appear on the map; add latitude/longitude in Participants first.
 
-Route list warning/error icons include counts and tooltips. Existing verification
-errors populate them; `MainWindow.set_route_diagnostics()` accepts separate warning
-and error lists for future rules. No new warning rules have been introduced.
+Route list warning/error icons include counts and tooltips for the current
+verification results. See the [Map guide](<docs/Map View.md#verifying-routes>)
+for every warning and error type.
 
 Enter host latitude/longitude in the participant editor to place it on the map,
 or use **Find Addresses** in Participants to look up everyone missing coordinates.
@@ -250,7 +255,7 @@ Imports replace their respective table after confirmation and
 reject malformed records before making changes. IDs are strings and keep leading
 zeros. Missing ID columns and blank ID cells receive unique `P-XXXXX`, `S-XXXXX`,
 or `R-XXXXX` IDs; supplied IDs are preserved. Participant CSV columns are
-`id,name,address,route_id,latitude,longitude`; only `name` is mandatory. Route CSV
+`id,name,address,allergies,route_id,latitude,longitude`; only `name` is mandatory. Route CSV
 columns are `id,appetizer_stop_id,main_stop_id,dessert_stop_id`; stop fields may be
 omitted or empty. Import Participants before Routes: the Routes CSV must contain exactly
 the Route IDs linked by Participants. Legacy participant CSVs with course columns
