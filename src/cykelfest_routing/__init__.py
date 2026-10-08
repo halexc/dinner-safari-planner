@@ -1,0 +1,1 @@
+"""Cycling dinner safari planning."""

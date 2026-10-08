@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cykelfest-routing"
+version = "0.1.0"
+description = "Desktop route planning and course assignments for cycling dinner safaris"
+readme = "README.md"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "PySide6>=6.9,<7",
+    "folium>=0.20,<1",
+    "osmnx>=2.0,<3",
+    "networkx>=3.4,<4",
+    "ortools>=9.14,<10",
+    "pandas>=2.2,<4",
+    "pydantic>=2.10,<3",
+    "geopy>=2.4,<3",
+    "shapely>=2.0,<3",
+    "scipy>=1.15,<2",
+    "scikit-learn>=1.6,<2",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<10", "ruff>=0.11,<1"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+cykelfest_routing = ["*.js", "*.tsv"]
+
+[tool.setuptools.data-files]
+"share/cykelfest-routing/res" = ["res/icon.ico", "res/icon.icns"]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
