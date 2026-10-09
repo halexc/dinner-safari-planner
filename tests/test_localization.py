@@ -90,9 +90,9 @@ def test_language_switch_updates_gui_and_preserves_data(window, language, tmp_pa
     assert not window.minimize_warning_counts["Repeat meetups."]
     assert window.respect_existing_routes
     table = window.tables["participants"][0]
-    assert table.item(0, 1).text() == "Save"  # User data must never be translated.
+    assert table.item(0, 2).text() == "Save"  # User data must never be translated.
     route_table = window.tables["routes"][0]
-    assert route_table.horizontalHeaderItem(1).text() == tr("Appetizer")
+    assert route_table.horizontalHeaderItem(2).text() == tr("Appetizer")
     window.verify_routes()
     assert tr("Repeat meetups.") in window.solution_info.toPlainText()
     project = tmp_path / "event.dsf"

@@ -46,3 +46,5 @@ Import replaces the Routes table and must preserve its relationship to Participa
 **Delete all** removes every route, including filtered-out rows. Participants then have no route entries and are available through **+ Add** on the map.
 
 To keep a route available for completion later, clear its course assignments rather than deleting it.
+
+Use the row checkboxes for **Remove selected** and group actions. **Edit selected** still affects the last active row. See [checkbox selection and data groups](<Data Groups.md>) for range selection, shared membership, and filters.

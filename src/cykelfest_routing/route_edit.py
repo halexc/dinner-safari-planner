@@ -240,6 +240,15 @@ class MapBridge(QObject):
 
     def publish(self, draft):
         payload = draft.payload()
+        from .map_view import host_group_colors
+
+        enabled = getattr(self.window, "color_by_groups", None)
+        colors = host_group_colors(draft.data) if enabled and enabled.isChecked() else {}
+        for host in payload["hosts"]:
+            host["groupColor"] = colors.get(host["id"], "")
+        if hasattr(self.window, "filtered_map_data"):
+            visible = self.window.filtered_map_data(draft.data).participants
+            payload["hosts"] = [host for host in payload["hosts"] if host["id"] in visible]
         collaboration = getattr(self.window, "collaboration", None)
         locked = collaboration.foreign_nodes() if collaboration else {}
         for host in payload["hosts"]:

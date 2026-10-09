@@ -105,6 +105,7 @@
                 `width:${indices.length ? 32 : 24}px;height:${indices.length ? 32 : 24}px;` +
                 `background:${color};border:${mainAnchor ? 4 : 3}px solid ${host.outline};`;
             circle.textContent = indices.map(index => index + 1).join('/');
+            if (host.groupColor) circle.style.boxShadow += `,0 0 0 6px ${host.groupColor}80`;
             if (host.locked) {
                 circle.style.background = `repeating-linear-gradient(135deg,${color} 0px,${color} 4px,#18232ddd 4px,#18232ddd 8px)`;
                 element.style.cursor = 'not-allowed';

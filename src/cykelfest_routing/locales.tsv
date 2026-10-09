@@ -1,5 +1,20 @@
 Cykelfest	Fahrradparty	Fête à vélo	Fiesta en bici	Cykelfest
 Localization	Sprache	Langue	Idioma	Språk
+Group {0}	Gruppe {0}	Groupe {0}	Grupo {0}	Grupp {0}
+Color by Groups	Nach Gruppen färben	Colorer par groupes	Colorear por grupos	Färga efter grupper
+Find missing coordinates for checked participants, or all participants when none are checked.	Fehlende Koordinaten für angekreuzte Teilnehmer suchen, oder für alle, wenn keiner angekreuzt ist.	Rechercher les coordonnées manquantes des participants cochés, ou de tous si aucun n’est coché.	Buscar coordenadas faltantes de los participantes marcados, o de todos si no hay ninguno marcado.	Hitta saknade koordinater för markerade deltagare, eller alla deltagare om ingen är markerad.
+Data groups	Datengruppen	Groupes de données	Grupos de datos	Datagrupper
+Filter by data group	Nach Datengruppe filtern	Filtrer par groupe de données	Filtrar por grupo de datos	Filtrera efter datagrupp
+None	Keine	Aucun	Ninguno	Ingen
+Add group	Gruppe hinzufügen	Ajouter un groupe	Añadir grupo	Lägg till grupp
+Group name	Gruppenname	Nom du groupe	Nombre del grupo	Gruppnamn
+New group	Neue Gruppe	Nouveau groupe	Nuevo grupo	Ny grupp
+Rename group	Gruppe umbenennen	Renommer le groupe	Renombrar grupo	Byt namn på grupp
+Group color	Gruppenfarbe	Couleur du groupe	Color del grupo	Gruppfärg
+Assign	Zuordnen	Affecter	Asignar	Tilldela
+Unbind	Zuordnung entfernen	Retirer l’affectation	Desvincular	Ta bort tilldelning
+Deselect	Abwählen	Désélectionner	Deseleccionar	Avmarkera
+Find coordinates for checked participants without coordinates.	Koordinaten für angekreuzte Teilnehmer ohne Koordinaten suchen.	Rechercher les coordonnées des participants cochés qui n’en ont pas.	Buscar coordenadas de los participantes marcados que no las tienen.	Hitta koordinater för markerade deltagare som saknar koordinater.
 Choose the interface language. Saved on this computer; project files and CSV field names are unchanged.	Sprache der Oberfläche wählen. Wird auf diesem Computer gespeichert; Projektdateien und CSV-Feldnamen bleiben unverändert.	Choisissez la langue de l’interface. Enregistrée sur cet ordinateur ; les fichiers projet et les noms des champs CSV restent inchangés.	Elige el idioma de la interfaz. Se guarda en este equipo; los archivos del proyecto y los nombres de los campos CSV no cambian.	Välj gränssnittets språk. Sparas på den här datorn; projektfiler och CSV-fältnamn ändras inte.
 Wait until address lookup or route generation finishes before changing the language.	Vor dem Sprachwechsel die Adresssuche oder Routenerzeugung abwarten.	Attendez la fin de la recherche d’adresses ou de la génération des parcours avant de changer de langue.	Espera a que termine la búsqueda de direcciones o la generación de rutas antes de cambiar el idioma.	Vänta tills adressökningen eller ruttgenereringen är klar innan du byter språk.
 Appetizer	Vorspeise	Entrée	Entrante	Förrätt

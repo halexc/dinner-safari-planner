@@ -8,7 +8,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from .data import DinnerData, Participant, Route, Stop
+from .data import DataGroup, DinnerData, Participant, Route, Stop
 from .verification import WARNING_TYPES
 
 
@@ -50,11 +50,12 @@ class ProjectFile(BaseModel):
     participants: list[Participant]
     stops: list[Stop]
     routes: list[Route]
+    groups: list[DataGroup] = Field(default_factory=list)
     settings: ProjectSettings
 
     @model_validator(mode="after")
     def relationships(self):
-        for kind in ("participants", "stops", "routes"):
+        for kind in ("participants", "stops", "routes", "groups"):
             ids = [record.id for record in getattr(self, kind)]
             if len(ids) != len(set(ids)):
                 raise ValueError(f"Duplicate IDs in {kind}.")
@@ -71,6 +72,7 @@ def save_project(path, data, settings):
         participants=list(data.participants.values()),
         stops=list(data.stops.values()),
         routes=list(data.routes.values()),
+        groups=list(data.groups.values()),
         settings=settings,
     )
     destination = Path(path)
@@ -105,6 +107,6 @@ def load_project(path):
                 content["settings"].pop(key, None)
     project = ProjectFile.model_validate(content)
     data = DinnerData()
-    for kind in ("participants", "stops", "routes"):
+    for kind in ("participants", "stops", "routes", "groups"):
         setattr(data, kind, {record.id: record for record in getattr(project, kind)})
     return data, project.settings

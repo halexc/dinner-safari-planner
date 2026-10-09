@@ -208,7 +208,7 @@ verification results. See the [Map guide](<docs/Map View.md#verifying-routes>)
 for every warning and error type.
 
 Enter host latitude/longitude in the participant editor to place it on the map,
-or use **Find Addresses** in Participants to look up everyone missing coordinates.
+or use **Find Addresses** in Participants to look up checked participants missing coordinates.
 The button sends nonempty addresses to Photon using OpenStreetMap data; include
 street, city and country for better matches. Existing coordinates are preserved.
 Lookup runs in the background with progress and Cancel, retaining completed
@@ -302,17 +302,6 @@ even when long-distance warnings are ignored. Equality at the hard limit is allo
 Click **Generate Routes** in Map to assign all three courses for every participant.
 The progress popup shows elapsed time and the configured time limit, and supports
 cancellation.
-
-**Pre-Gen**, to its left, greedily seeds up to 25% of participants, rounded down.
-It randomly selects owners with empty or absent routes and three distinct hosts
-per seed route; no host node is shared between seed routes. The owner hosts
-appetizer, and both segments must meet the preferred minimum and maximum lengths.
-Existing stop assignments are kept. Main and dessert hosts receive their own
-hosting slot when it is empty; triples that would introduce errors are rejected.
-Successful seeds are applied immediately and enable **Respect existing routes**
-for subsequent full generation. If the target cannot be reached, Pre-Gen reports
-how many seeds it found. Cancellation leaves the project unchanged. At least four
-participants are required.
 
 All participants need coordinates; use Find Addresses first if necessary. The
 CP-SAT solver runs in the background with Cancel and a shared time budget across
@@ -451,3 +440,5 @@ distance statistics. Total statistics include only complete routes with known
 coordinates. Warning/error counts summarize affected routes by issue type after
 verification; use **Verify all routes** to refresh them when automatic verification
 is disabled.
+
+Data tables now support checkbox multi-selection and shared participant/stop/route groups. See [Data groups](<docs/Data Groups.md>) for selection, membership, persistence, and map filters.

@@ -41,6 +41,21 @@ def host_outlines(data):
     }
 
 
+def host_group_colors(data):
+    """The first listed group determines an address's optional outer outline."""
+    colors = {}
+    for group in data.groups.values():
+        hosts = set(group.participants)
+        stops = set(group.stops)
+        for rid in group.routes:
+            if rid in data.routes:
+                stops.update(data.routes[rid].stops)
+        hosts.update(data.stops[sid].host for sid in stops if sid in data.stops)
+        for pid in hosts:
+            colors.setdefault(pid, group.color)
+    return colors
+
+
 OSM_ATTRIBUTION = (
     '<a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</a>'
 )
@@ -78,6 +93,8 @@ def map_html(
     map_style="standard",
     focus_route=False,
     locked_hosts=None,
+    color_by_groups=False,
+    group_colors=None,
 ) -> str:
     locked_hosts = locked_hosts or {}
     points = [
@@ -95,6 +112,11 @@ def map_html(
     ).add_to(map_)
     selected_hosts = {}
     outlines = host_outlines(data)
+    group_colors = (
+        (host_group_colors(data) if group_colors is None else group_colors)
+        if color_by_groups
+        else {}
+    )
     nodes, edges = [], []
     if selected in data.participants:
         for index, sid in enumerate(data.route_stops(selected)):
@@ -105,7 +127,11 @@ def map_html(
         for host in data.participants.values():
             numbers = selected_hosts.get(host.id, [])
             if host.latitude is not None and (show_hosts or numbers or host.id in locked_hosts):
-                if numbers or host.id in locked_hosts:
+                if numbers or host.id in locked_hosts or host.id in group_colors:
+                    size = 28 if numbers or host.id in locked_hosts else 20
+                    shadow = (
+                        f",0 0 0 6px {group_colors[host.id]}80" if host.id in group_colors else ""
+                    )
                     background = (
                         "repeating-linear-gradient(135deg,#187f71 0px,#187f71 4px,#18232ddd 4px,#18232ddd 8px)"
                         if host.id in locked_hosts
@@ -114,9 +140,9 @@ def map_html(
                     marker = folium.Marker(
                         [host.latitude, host.longitude],
                         icon=folium.DivIcon(
-                            icon_size=(28, 28),
-                            icon_anchor=(14, 14),
-                            html=f'<div style="width:28px;height:28px;box-sizing:border-box;border:3px solid {outlines[host.id]};border-radius:50%;background:{background};color:white;display:flex;align-items:center;justify-content:center;font:bold 13px sans-serif;box-shadow:0 1px 4px #0005">'
+                            icon_size=(size, size),
+                            icon_anchor=(size / 2, size / 2),
+                            html=f'<div style="width:{size}px;height:{size}px;box-sizing:border-box;border:3px solid {outlines[host.id]};border-radius:50%;background:{background};color:white;display:flex;align-items:center;justify-content:center;font:bold 13px sans-serif;box-shadow:0 1px 4px #0005{shadow}">'
                             + "/".join(map(str, numbers))
                             + "</div>",
                         ),
@@ -177,7 +203,7 @@ def map_html(
     if points:
         route_points = (
             [point for point in data.coordinates(selected) if point is not None]
-            if focus_route and selected
+            if focus_route and selected in data.participants
             else []
         )
         map_.fit_bounds(route_points or points, padding=(35, 35), max_zoom=14)
@@ -230,6 +256,9 @@ def map_html(
             + ";</script>"
         )
         state = draft.payload()
+        for host in state["hosts"]:
+            host["groupColor"] = group_colors.get(host["id"], "")
+        state["hosts"] = [host for host in state["hosts"] if host["id"] in data.participants]
         for host in state["hosts"]:
             host["locked"] = locked_hosts.get(host["id"], "")
             if host["locked"]:

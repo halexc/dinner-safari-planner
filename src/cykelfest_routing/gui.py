@@ -73,6 +73,7 @@ from .data import (
     parse_csv,
     write_csv,
 )
+from .data_groups import DataGroupsMixin, SelectionDelegate, SelectionHeader
 from .geocoding import AddressWorker
 from .localization import (
     LANGUAGES,
@@ -83,7 +84,7 @@ from .localization import (
     translate_html,
     translate_message,
 )
-from .map_view import MAP_STYLES, STOP_OUTLINES, map_html
+from .map_view import MAP_STYLES, STOP_OUTLINES, host_group_colors, map_html
 from .project import ProjectSettings, load_project, save_project
 from .results import solution_summary, write_results
 from .route_edit import MapBridge, RouteDraft
@@ -606,7 +607,7 @@ class SolverPreview(QDialog):
         layout.addWidget(buttons)
 
 
-class MainWindow(QMainWindow):
+class MainWindow(DataGroupsMixin, QMainWindow):
     def __init__(
         self, data: DinnerData | None = None, *, enable_map: bool = True, preferences=None
     ):
@@ -668,6 +669,7 @@ class MainWindow(QMainWindow):
         self.build_workspace()
 
     def build_workspace(self):
+        self.initialize_groups()
         self.setWindowTitle(tr("Cykelfest · Dinner safari planner"))
         self.resize(1400, 900)
         self.setMinimumSize(1000, 700)
@@ -1032,7 +1034,9 @@ class MainWindow(QMainWindow):
         selected, tab = self.selected_route, self.tabs.currentIndex()
         size = self.size()
         map_mode, show_hosts = self.map_mode.currentData(), self.show_hosts.isChecked()
+        color_by_groups = self.color_by_groups.isChecked()
         records = {kind: self.selected_record(kind) for kind in self.tables}
+        filters = {kind: combo.currentData() for kind, combo in self.group_filters.items()}
         searches = {kind: search.text() for kind, (_, search) in self.tables.items()}
         self.language = language
         self.system_settings_changed()
@@ -1042,9 +1046,14 @@ class MainWindow(QMainWindow):
         self.resize(size)
         self.map_mode.setCurrentIndex(self.map_mode.findData(map_mode))
         self.show_hosts.setChecked(show_hosts)
+        self.color_by_groups.setChecked(color_by_groups)
         if self.project_path:
             self.setWindowTitle(tr("{0} · Cykelfest", self.project_path.name))
         self.refresh(selected)
+        for kind, group_id in filters.items():
+            self.group_filters[kind].setCurrentIndex(
+                max(0, self.group_filters[kind].findData(group_id))
+            )
         if self.draft:
             self.set_editing(True)
         for kind, text in searches.items():
@@ -1110,7 +1119,6 @@ class MainWindow(QMainWindow):
             self.export_results_button,
             self.clear_routes_button,
             self.generate_routes_button,
-            self.pre_gen_button,
             self.find_addresses_button,
             *getattr(self, "host_only_controls", []),
         ):
@@ -1390,6 +1398,15 @@ class MainWindow(QMainWindow):
         if not self.syncing_collaboration and self.collaboration.mode == "host":
             self.collaboration.replace(data, settings)
         self.data = data
+        if not self.syncing_collaboration:
+            for kind in MODELS:
+                self.checked_entries[kind].clear()
+                self.check_anchor[kind] = None
+            self.selected_group = None
+            for combo in self.group_filters.values():
+                combo.blockSignals(True)
+                combo.setCurrentIndex(0)
+                combo.blockSignals(False)
         self.project_path = path
         self.set_project_dirty(False)
         self.pending_pairing = None
@@ -1531,11 +1548,15 @@ class MainWindow(QMainWindow):
         control_layout.addWidget(label(tr("Map display"), "section"))
         row = QVBoxLayout()
         self.map_mode = QComboBox()
+        self.map_mode.setMinimumContentsLength(8)
+        self.map_mode.setMinimumWidth(110)
+        self.map_mode.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
         for mode in ("Selected route", "All routes", "Hosts only"):
             self.map_mode.addItem(tr(mode), mode)
         self.map_mode.currentTextChanged.connect(self.refresh_map)
         display_row = QHBoxLayout()
         display_row.addWidget(self.map_mode, 1)
+        display_row.addWidget(self.make_group_filter("map"), 1)
         self.fit_hosts_button = button("", self.fit_hosts)
         self.fit_hosts_button.setFixedSize(36, 36)
         self.fit_hosts_button.setStyleSheet("padding:0;")
@@ -1547,7 +1568,12 @@ class MainWindow(QMainWindow):
         self.show_hosts = QCheckBox(tr("Show host locations"))
         self.show_hosts.setChecked(True)
         self.show_hosts.toggled.connect(self.refresh_map)
-        row.addWidget(self.show_hosts)
+        toggles = QHBoxLayout()
+        toggles.addWidget(self.show_hosts)
+        self.color_by_groups = QCheckBox(tr("Color by Groups"))
+        self.color_by_groups.toggled.connect(self.refresh_map)
+        toggles.addWidget(self.color_by_groups)
+        row.addLayout(toggles)
         control_layout.addLayout(row)
         control_layout.addWidget(label(tr("Map key"), "subtitle"))
         key = QGridLayout()
@@ -1621,7 +1647,7 @@ class MainWindow(QMainWindow):
         for action in (self.edit_route_button, self.revert_route_button, self.save_route_button):
             route_actions.addWidget(action)
         details.addLayout(route_actions)
-        right_layout.addWidget(card, 5)
+        right_layout.addWidget(card, 6)
         right_layout.addWidget(label(tr("Routes"), "section"))
         route_row = QHBoxLayout()
         self.routes = QListWidget()
@@ -1639,7 +1665,6 @@ class MainWindow(QMainWindow):
         route_row.addLayout(actions)
         right_layout.addLayout(route_row, 3)
         self.verify_button = button(tr("Verify all routes"), self.verify_routes, True)
-        right_layout.addWidget(self.verify_button)
         self.generate_routes_button = button(tr("Generate Routes"), self.generate_routes, True)
         self.generate_routes_button.setToolTip(
             tr(
@@ -1647,13 +1672,7 @@ class MainWindow(QMainWindow):
             )
         )
         generation_row = QHBoxLayout()
-        self.pre_gen_button = button(tr("Pre-Gen"), lambda: self.generate_routes(pre_generate=True))
-        self.pre_gen_button.setToolTip(
-            tr(
-                "Randomly seed disjoint routes for up to 25% of participants (rounded down). Each owner hosts appetizer and both segments meet the preferred limits. Existing assignments are kept. Enables Respect existing routes."
-            )
-        )
-        generation_row.addWidget(self.pre_gen_button)
+        generation_row.addWidget(self.verify_button, 1)
         generation_row.addWidget(self.generate_routes_button, 1)
         right_layout.addLayout(generation_row)
         self.verification = label(tr("Check course assignments and data references."), "subtitle")
@@ -1686,10 +1705,12 @@ class MainWindow(QMainWindow):
         search.setClearButtonEnabled(True)
         search.setMaximumWidth(320)
         search.textChanged.connect(lambda text: self.filter_table(kind, text))
+        top.addWidget(self.make_group_filter(kind))
         top.addWidget(search)
         layout.addLayout(top)
         body = QHBoxLayout()
         table = QTableWidget()
+        table.setHorizontalHeader(SelectionHeader(self, kind, table))
         headers = {
             "participants": [
                 tr("ID"),
@@ -1701,12 +1722,14 @@ class MainWindow(QMainWindow):
             "stops": [tr("ID"), tr("Host"), tr("Guests"), tr("Course")],
             "routes": [tr("ID"), *[tr(course) for course in COURSES]],
         }[kind]
+        headers.insert(0, "")
         table.setColumnCount(len(headers))
         table.setHorizontalHeaderLabels(headers)
         if kind == "stops":
-            table.setItemDelegateForColumn(2, GuestCellDelegate(table))
+            table.setItemDelegateForColumn(3, GuestCellDelegate(table))
         table.setSortingEnabled(True)
-        table.sortItems(0, Qt.AscendingOrder)
+        table.sortItems(1, Qt.AscendingOrder)
+        table.setItemDelegateForColumn(0, SelectionDelegate(self, kind, table))
         table.setAlternatingRowColors(True)
         table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         table.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -1715,43 +1738,68 @@ class MainWindow(QMainWindow):
         table.verticalHeader().setDefaultSectionSize(46)
         table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        table.cellClicked.connect(
+            lambda row, col: (
+                self.check_anchor.__setitem__(kind, table.item(row, 0).data(Qt.UserRole))
+                if col != 0
+                else None
+            )
+        )
         table.cellDoubleClicked.connect(
             lambda row, col: (
                 self.edit_record(kind)
-                if (kind == "participants" and col != 3) or (kind != "participants" and col < 1)
+                if col > 0
+                and ((kind == "participants" and col != 4) or (kind != "participants" and col < 2))
                 else self.table_clicked(kind, row, col)
+                if col > 0
+                else None
             )
         )
         self.tables[kind] = (table, search)
         table.model().layoutChanged.connect(lambda *_: self.filter_table(kind, search.text()))
         body.addWidget(table, 1)
-        actions = QVBoxLayout()
+        sidebar = QVBoxLayout()
+        controls = QHBoxLayout()
+        files, entries = QVBoxLayout(), QVBoxLayout()
         if kind == "participants":
             self.host_only_controls = []
         import_button = button(tr("Import CSV"), lambda: self.import_csv(kind), True)
         self.host_only_controls.append(import_button)
-        actions.addWidget(import_button)
-        actions.addWidget(button(tr("Export CSV"), lambda: self.export_csv(kind)))
+        files.addWidget(import_button)
+        files.addWidget(button(tr("Export CSV"), lambda: self.export_csv(kind)))
         if kind == "participants":
             self.find_addresses_button = button(tr("Find Addresses"), self.find_addresses)
             self.find_addresses_button.setToolTip(
                 tr(
-                    "Find coordinates for all participants without coordinates. Sends their addresses to Photon (OpenStreetMap data); existing coordinates are preserved. Include city and country for better results."
+                    "Find missing coordinates for checked participants, or all participants when none are checked."
                 )
             )
-            actions.addWidget(self.find_addresses_button)
-        actions.addSpacing(20)
-        if kind != "routes":
-            actions.addWidget(button(tr("Add"), lambda: self.edit_record(kind, new=True)))
-        actions.addWidget(button(tr("Edit selected"), lambda: self.edit_record(kind)))
-        actions.addWidget(button(tr("Remove selected"), lambda: self.remove_record(kind)))
+            files.addWidget(self.find_addresses_button)
+        files.addStretch()
+        entries.addWidget(
+            button(
+                tr("Add"),
+                self.add_route if kind == "routes" else lambda: self.edit_record(kind, new=True),
+            )
+        )
+        entries.addWidget(button(tr("Edit selected"), lambda: self.edit_record(kind)))
+        entries.addWidget(button(tr("Remove selected"), lambda: self.remove_record(kind)))
         delete_all = button(tr("Delete all"), lambda: self.delete_all_records(kind))
         self.host_only_controls.append(delete_all)
-        actions.addWidget(delete_all)
+        entries.addWidget(delete_all)
         if kind == "routes":
-            actions.addWidget(button(tr("Show participant"), self.show_route_participant))
-        actions.addStretch()
-        body.addLayout(actions)
+            entries.addWidget(button(tr("Show participant"), self.show_route_participant))
+        entries.addStretch()
+        controls.addLayout(files, 1)
+        controls.addLayout(entries, 1)
+        controls.setSpacing(12)
+        sidebar.addLayout(controls)
+        sidebar.addWidget(self.build_group_panel(), 1)
+        container = QWidget()
+        container.setLayout(sidebar)
+        container.setMinimumWidth(300)
+        container.setMaximumWidth(420)
+        body.addWidget(container)
         layout.addLayout(body, 1)
         layout.addWidget(
             label(
@@ -1845,7 +1893,9 @@ class MainWindow(QMainWindow):
         if not self.routes.currentItem() and self.routes.count():
             self.routes.setCurrentRow(0)
         self.routes.blockSignals(False)
+        self.refresh_groups()
         for kind, (table, search) in self.tables.items():
+            self.checked_entries[kind].intersection_update(getattr(self.data, kind))
             selected_record = self.selected_record(kind)
             records = getattr(self.data, kind)
             table.setSortingEnabled(False)
@@ -1861,6 +1911,13 @@ class MainWindow(QMainWindow):
                         else [record.id, *record.stops]
                     )
                 )
+                checkbox = QTableWidgetItem("")
+                checkbox.setData(Qt.UserRole, record.id)
+                checkbox.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable | Qt.ItemIsUserCheckable)
+                checkbox.setCheckState(
+                    Qt.Checked if record.id in self.checked_entries[kind] else Qt.Unchecked
+                )
+                table.setItem(row, 0, checkbox)
                 for col, value in enumerate(values):
                     item = QTableWidgetItem(value)
                     item.setData(Qt.UserRole, record.id)
@@ -1891,7 +1948,7 @@ class MainWindow(QMainWindow):
                         else:
                             person = record
                         item.setToolTip(person.name if person else tr("Reference unavailable"))
-                    table.setItem(row, col, item)
+                    table.setItem(row, col + 1, item)
                 if kind == "stops" and record.guests:
                     links = ReferenceLinks(
                         ", ".join(
@@ -1906,12 +1963,13 @@ class MainWindow(QMainWindow):
                     links.linkHovered.connect(
                         lambda pid, widget=links: self.guest_hover(widget, pid)
                     )
-                    table.setCellWidget(row, 2, links)
+                    table.setCellWidget(row, 3, links)
             table.setSortingEnabled(True)
             for row in range(table.rowCount()):
                 if table.item(row, 0).data(Qt.UserRole) == selected_record:
                     table.selectRow(row)
             self.filter_table(kind, search.text())
+        self.refresh_checkboxes()
         self.counts.setText(
             tr(
                 "{0} pairings  ·  {1} stops  ·  {2} routes",
@@ -1927,6 +1985,7 @@ class MainWindow(QMainWindow):
         )
 
     def changed(self, selected=None):
+        self.data.prune_groups()
         self.sync_collaboration()
         self.set_project_dirty(True)
         self.exported.clear()
@@ -2033,7 +2092,7 @@ class MainWindow(QMainWindow):
         if not hasattr(self, "routes"):
             return
         html = map_html(
-            self.draft.data if self.draft else self.data,
+            self.filtered_map_data(self.draft.data if self.draft else self.data),
             self.selected_route,
             self.map_mode.currentData(),
             self.show_hosts.isChecked(),
@@ -2042,6 +2101,10 @@ class MainWindow(QMainWindow):
             map_style=self.map_style,
             focus_route=self.focus_selected_route,
             locked_hosts=self.collaboration.foreign_nodes(),
+            color_by_groups=self.color_by_groups.isChecked(),
+            group_colors=host_group_colors(self.draft.data if self.draft else self.data)
+            if self.color_by_groups.isChecked()
+            else None,
         )
         preserve_view = (
             self.collaboration.mode in ("host", "client") and not self.focus_selected_route
@@ -2152,7 +2215,11 @@ class MainWindow(QMainWindow):
                 for col in range(table.columnCount())
                 if table.item(row, col)
             ]
-            table.setRowHidden(row, text.casefold() not in " ".join(values).casefold())
+            group = self.data.groups.get(self.group_filters[kind].currentData())
+            included = group is None or table.item(row, 0).data(Qt.UserRole) in getattr(group, kind)
+            table.setRowHidden(
+                row, not included or text.casefold() not in " ".join(values).casefold()
+            )
 
     def guest_hover(self, widget, participant_id):
         participant = self.data.participants.get(participant_id)
@@ -2169,7 +2236,15 @@ class MainWindow(QMainWindow):
             return
         if self.address_worker is not None or self.draft or self.solver_worker is not None:
             return
-        missing = [p for p in self.data.participants.values() if p.latitude is None]
+        missing = [
+            p
+            for p in self.data.participants.values()
+            if (
+                not self.checked_entries["participants"]
+                or p.id in self.checked_entries["participants"]
+            )
+            and p.latitude is None
+        ]
         addresses = [(p.id, p.address.strip()) for p in missing if p.address.strip()]
         self.address_blank_count = len(missing) - len(addresses)
         if not addresses:
@@ -2204,7 +2279,6 @@ class MainWindow(QMainWindow):
         self.save_project_button.setEnabled(False)
         self.load_project_button.setEnabled(False)
         self.generate_routes_button.setEnabled(False)
-        self.pre_gen_button.setEnabled(False)
         self.address_progress.canceled.connect(worker.cancel)
         worker.progress.connect(self.address_lookup_progress)
         worker.results_ready.connect(self.address_lookup_results)
@@ -2276,7 +2350,6 @@ class MainWindow(QMainWindow):
         self.save_project_button.setEnabled(self.draft is None)
         self.load_project_button.setEnabled(self.draft is None)
         self.generate_routes_button.setEnabled(self.draft is None)
-        self.pre_gen_button.setEnabled(self.draft is None)
         if worker:
             worker.deleteLater()
         self.update_collaboration_controls()
@@ -2291,11 +2364,11 @@ class MainWindow(QMainWindow):
 
     def table_clicked(self, kind, row, col):
         table = self.tables[kind][0]
-        if kind == "participants" and col == 3:
+        if kind == "participants" and col == 4:
             self.jump_to("routes", table.item(row, col).text())
-        elif kind == "routes" and col >= 1:
+        elif kind == "routes" and col >= 2:
             self.jump_to("stops", table.item(row, col).text())
-        elif kind == "stops" and col == 1:
+        elif kind == "stops" and col == 2:
             self.jump_to("participants", table.item(row, col).text())
 
     def jump_to(self, kind, record_id):
@@ -2306,11 +2379,12 @@ class MainWindow(QMainWindow):
             return
         table, search = self.tables[kind]
         for row in range(table.rowCount()):
-            if table.item(row, 0).text() == record_id:
+            if table.item(row, 1).text() == record_id:
                 search.clear()
+                self.group_filters[kind].setCurrentIndex(0)
                 self.tabs.setCurrentIndex({"participants": 1, "stops": 2, "routes": 3}[kind])
                 table.selectRow(row)
-                table.scrollToItem(table.item(row, 0))
+                table.scrollToItem(table.item(row, 1))
                 table.setFocus()
                 return
         QMessageBox.information(
@@ -2381,10 +2455,7 @@ class MainWindow(QMainWindow):
             self.jump_to("participants", participant.id)
 
     def remove_record(self, kind):
-        rid = self.selected_record(kind)
-        if rid is None:
-            return
-        self.confirm_data_deletion(kind, [rid])
+        self.confirm_data_deletion(kind, list(self.checked_entries[kind]))
 
     def delete_all_records(self, kind):
         if self.collaboration.mode == "client" or self.collaboration.locks:
@@ -2444,6 +2515,7 @@ class MainWindow(QMainWindow):
             self.pending_pairing = dialog.participant_id
             self.data.create_route(self.pending_pairing)
             self.changed(self.pending_pairing)
+            self.tabs.setCurrentIndex(0)
             self.edit_route()
 
     def edit_route(self):
@@ -2474,9 +2546,9 @@ class MainWindow(QMainWindow):
         self.clear_routes_button.setEnabled(not editing)
         self.verify_button.setEnabled(not editing)
         self.generate_routes_button.setEnabled(not editing and self.address_worker is None)
-        self.pre_gen_button.setEnabled(not editing and self.address_worker is None)
         self.export_results_button.setEnabled(not editing)
         self.map_mode.setEnabled(not editing)
+        self.group_filters["map"].setEnabled(not editing)
         self.show_hosts.setEnabled(not editing)
         for index in (1, 2, 3):
             self.tabs.setTabEnabled(index, not editing)

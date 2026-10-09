@@ -10,7 +10,7 @@
 
 ### Save Project
 
-**Save Project** writes a `.dsf` file with all three tables, their references, and project settings, including warning preferences. Use it to resume planning or share a complete event.
+**Save Project** writes a `.dsf` file with all three tables, their references, data groups, and project settings, including warning preferences. Use it to resume planning or share a complete event.
 
 System preferences such as theme, language, delimiter, and solver time remain on the computer. Finish a route draft before saving. The route panel's **Save** commits only to the current workspace; **Save Project** writes the event to disk.
 
@@ -46,11 +46,11 @@ These controls apply to [Participants](<Participants View.md>), [Stops](<Stops V
 
 - **Search this table** filters displayed rows; clear it to see all rows.
 - Click a column heading to sort, then click again to reverse direction. Sorting does not change assignments or IDs.
-- Select a row before using **Edit selected** or **Remove selected**.
+- Select a row for **Edit selected**. Check one or more rows for **Remove selected**.
 - Double-click a reference to reveal and select its destination row.
 - **Delete all** affects the whole table, including filtered-out rows.
 
-Use edit dialogs rather than typing directly into cells. Participants and Stops have an **Add** button; create routes in the Map view.
+Use edit dialogs rather than typing directly into cells. Each table has an **Add** button. Adding a route lets you choose a participant, then opens its Map editor.
 
 Deleting referenced records offers a confirmation with affected references. You can cancel or delete while clearing references. Participant deletion removes its route and clears stop references; stop deletion clears route assignments; route deletion removes included stops when no other route uses them. See each view for details.
 

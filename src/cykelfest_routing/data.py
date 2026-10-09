@@ -63,6 +63,17 @@ class Route(BaseModel):
 
 
 MODELS = {"participants": Participant, "stops": Stop, "routes": Route}
+
+
+class DataGroup(BaseModel):
+    id: str = Field(min_length=1)
+    name: str = Field(min_length=1)
+    color: str = Field(default="#59a9dc", pattern=r"^#[0-9a-fA-F]{6}$")
+    participants: list[str] = Field(default_factory=list)
+    stops: list[str] = Field(default_factory=list)
+    routes: list[str] = Field(default_factory=list)
+
+
 CSV_REQUIRED = {"participants": {"name"}, "stops": set(), "routes": set()}
 
 
@@ -206,6 +217,15 @@ class DinnerData:
         self.participants: dict[str, Participant] = {}
         self.stops: dict[str, Stop] = {}
         self.routes: dict[str, Route] = {}
+        self.groups: dict[str, DataGroup] = {}
+
+    def prune_groups(self):
+        """Forget memberships whose records no longer exist."""
+        for group in self.groups.values():
+            for kind in MODELS:
+                setattr(
+                    group, kind, [rid for rid in getattr(group, kind) if rid in getattr(self, kind)]
+                )
 
     def ensure_routes(self):
         """Maintain distinct explicit route links and migrate legacy assignments."""
@@ -250,6 +270,7 @@ class DinnerData:
         participant.route_id = ""
         for stop in self.stops.values():
             stop.guests = [guest for guest in stop.guests if guest != participant_id]
+        self.prune_groups()
 
     def clear_routes(self):
         for pid in self.participants:
@@ -302,6 +323,7 @@ class DinnerData:
             for field in STOP_FIELDS:
                 if getattr(route, field) in removed_stops:
                     setattr(route, field, "")
+        self.prune_groups()
 
     def replace_table(self, kind, records):
         """Validate a CSV replacement before changing the live workspace."""
@@ -320,6 +342,7 @@ class DinnerData:
                     continue
                 trial.assign_route(pid, trial.route_for(pid).stops)
         self.participants, self.routes, self.stops = trial.participants, trial.routes, trial.stops
+        self.prune_groups()
 
     def assign_route(self, participant_id: str, stop_ids: list[str]) -> None:
         """Update both references and guest membership together."""

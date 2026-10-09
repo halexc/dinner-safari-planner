@@ -41,7 +41,7 @@ Unrelated updates continue arriving during a draft. The draft is rebased onto th
 
 ## Host-only controls
 
-Connected clients can inspect project settings, but only the host changes them. Host changes appear in the client controls. Clients cannot use New Project, Load Project, Export results, Clear Routes, Delete all, Pre-Gen, or Generate Routes. CSV imports and Find Addresses are also host-only because they modify the project in bulk.
+Connected clients can inspect project settings, but only the host changes them. Host changes appear in the client controls. Clients cannot use New Project, Load Project, Export results, Clear Routes, Delete all, or Generate Routes. CSV imports and Find Addresses are also host-only because they modify the project in bulk.
 
 Clients can still use Save Project and individual table CSV exports to keep local copies. Disconnecting restores standalone functionality while retaining the shared project data.
 
@@ -54,3 +54,5 @@ The host tracks acknowledged project revisions and checks connections periodical
 There is no offline change queue or automatic reconnection. Connecting again receives the host's current project. If a connection fails during Save, the host may have accepted the change before its confirmation was lost; reconnect and inspect the route before repeating the edit.
 
 This first version is intended for trusted local networks and VPNs. The TCP connection has no application-level encryption or password authentication. Use the VPN's protection when connecting across the internet; public internet hosting and automatic router traversal are outside this version's scope.
+
+Data groups and their memberships are shared with collaborators. Checked entries and group filters remain local.

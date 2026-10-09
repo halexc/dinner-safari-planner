@@ -15,11 +15,11 @@ from PySide6.QtNetwork import (
     QTcpSocket,
 )
 
-from .data import MODELS, DinnerData, next_record_id
+from .data import MODELS, DataGroup, DinnerData, next_record_id
 from .project import ProjectFile
 
 MAX_FRAME = 16 * 1024 * 1024
-TABLES = ("participants", "stops", "routes")
+TABLES = ("participants", "stops", "routes", "groups")
 
 
 def snapshot(data, settings):
@@ -30,6 +30,7 @@ def snapshot(data, settings):
 
 
 def decode_snapshot(state):
+    state = {"groups": {}, **state}
     if any(rid != record["id"] for k in TABLES for rid, record in state[k].items()):
         raise ValueError("Invalid record identifiers")
     project = ProjectFile.model_validate(
@@ -321,7 +322,7 @@ class CollaborationSession(QObject):
             return None
         if action != "patch":
             raise ValueError("Unsupported collaboration action")
-        patch = payload["changes"]
+        patch = {"groups": {}, **payload["changes"]}
         if set(patch) != set(TABLES):
             raise ValueError("Invalid patch")
         if any(
@@ -341,8 +342,14 @@ class CollaborationSession(QObject):
             reserved = dict(trial[k])
             for rid, change in patch[k].items():
                 if change["before"] is None and change["after"] is not None:
-                    new_id = next_record_id(
-                        reserved, {"participants": "P", "stops": "S", "routes": "R"}[k]
+                    if k == "groups" and rid in reserved:
+                        raise ValueError("The record changed. Please retry your edit.")
+                    new_id = (
+                        rid
+                        if k == "groups"
+                        else next_record_id(
+                            reserved, {"participants": "P", "stops": "S", "routes": "R"}[k]
+                        )
                     )
                     mappings[k][rid] = new_id
                     reserved[new_id] = None
@@ -365,10 +372,15 @@ class CollaborationSession(QObject):
                     record["guests"] = [
                         mappings["participants"].get(p, p) for p in record["guests"]
                     ]
-                else:
+                elif k == "routes":
                     for field in ("appetizer_stop_id", "main_stop_id", "dessert_stop_id"):
                         record[field] = mappings["stops"].get(record[field], record[field])
-                MODELS[k].model_validate(record)
+                else:
+                    for table in MODELS:
+                        record[table] = [
+                            mappings[table].get(value, value) for value in record[table]
+                        ]
+                (DataGroup if k == "groups" else MODELS[k]).model_validate(record)
                 trial[k][rid] = record
         decode_snapshot(trial)
         self.state = trial

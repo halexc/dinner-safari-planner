@@ -14,7 +14,7 @@ from cykelfest_routing.collaboration import (
     difference,
     snapshot,
 )
-from cykelfest_routing.data import Participant, demo_data
+from cykelfest_routing.data import DataGroup, Participant, demo_data
 from cykelfest_routing.gui import MainWindow
 from cykelfest_routing.project import ProjectSettings
 
@@ -60,6 +60,29 @@ def test_snapshot_client_edit_and_host_settings_propagate(sessions):
     settings.minimum_segment_km = 0.75
     host.publish(data, settings)
     wait_until(lambda: second.state["settings"]["minimum_segment_km"] == 0.75)
+
+
+def test_multimodal_groups_propagate_and_remap_new_members(sessions):
+    host, first, second = sessions
+    data, settings = decode_snapshot(first.state)
+    data.participants["P-00009"] = Participant(id="P-00009", name="New member")
+    data.groups["new-group"] = DataGroup(
+        id="new-group",
+        name="Friends",
+        color="#abcdef",
+        participants=["P-00009"],
+        stops=["S002"],
+        routes=["R-00001"],
+    )
+    first.publish(data, settings)
+    wait_until(lambda: second.state == host.state == first.state)
+    group = host.state["groups"]["new-group"]
+    assert group["participants"] == ["P-00001"]
+    assert group["stops"] == ["S002"] and group["routes"] == ["R-00001"]
+    data, settings = decode_snapshot(second.state)
+    data.groups["new-group"].name = "Renamed"
+    second.publish(data, settings)
+    wait_until(lambda: first.state["groups"]["new-group"]["name"] == "Renamed")
 
 
 def test_locks_stale_edits_and_host_permissions(sessions):

@@ -32,13 +32,13 @@ More solver time can improve results but does not guarantee feasibility or optim
 | Preferred maximum segment length (km) | Warns above this length; a soft preference in full generation | 3 km |
 | Respect existing routes | Preserves filled slots during generation and completes missing courses | Off |
 
-Minimum cannot exceed maximum. Segments exceeding **three times the preferred maximum** produce an error and are forbidden by generation. A preferred maximum of 3 km gives a hard maximum of 9 km. Pre-Gen requires its seed segments to meet the preferred minimum and maximum.
+Minimum cannot exceed maximum. Segments exceeding **three times the preferred maximum** produce an error and are forbidden by generation. A preferred maximum of 3 km gives a hard maximum of 9 km.
 
 Distances are straight-line estimates between courses, excluding travel to the first stop or from the last.
 
 Safe Edit keeps ineligible markers at 25% opacity but prevents choosing them. Disabling it permits conflicting choices; verification still reports errors. It controls editing, not enforcement of solver hard constraints.
 
-Respect existing routes locks individual filled course slots, including incomplete routes. Empty routes can be completed and other participants may join preserved stops. Repair conflicting fixed assignments or disable the setting before generation. **Pre-Gen** enables it automatically.
+Respect existing routes locks individual filled course slots, including incomplete routes. Empty routes can be completed and other participants may join preserved stops. Repair conflicting fixed assignments or disable the setting before generation.
 
 ## Project Warnings
 

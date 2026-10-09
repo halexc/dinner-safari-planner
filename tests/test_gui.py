@@ -40,13 +40,13 @@ def test_tabs_reference_navigation_and_search(window):
     table, search = window.tables["stops"]
     search.setText("missing")
     assert table.isRowHidden(0)
-    window.table_clicked("participants", 0, 3)
+    window.table_clicked("participants", 0, 4)
     assert window.tabs.currentIndex() == 3
-    window.table_clicked("routes", window.tables["routes"][0].currentRow(), 2)
+    window.table_clicked("routes", window.tables["routes"][0].currentRow(), 3)
     assert window.tabs.currentIndex() == 2
     assert search.text() == ""
-    assert table.item(table.currentRow(), 0).text() == "S002"
-    window.table_clicked("stops", 1, 1)
+    assert table.item(table.currentRow(), 1).text() == "S002"
+    window.table_clicked("stops", 1, 2)
     assert window.tabs.currentIndex() == 1
     assert window.selected_record("participants") == "P002"
 
@@ -334,7 +334,7 @@ def test_generation_timer_updates_and_stops_after_finish(window, monkeypatch, ap
     assert stopped == [True] and window.solver_worker is None
 
 
-def test_pre_gen_button_applies_seeds_and_activates_route_lock(window, monkeypatch, app):
+def test_internal_pre_generation_preserves_seed_behavior(window, monkeypatch, app):
     from PySide6.QtWidgets import QMessageBox
     from test_solver import seed_data
 
@@ -343,7 +343,8 @@ def test_pre_gen_button_applies_seeds_and_activates_route_lock(window, monkeypat
     window.maximum_segment.setValue(2)
     messages = []
     monkeypatch.setattr(QMessageBox, "information", lambda *args: messages.append(args[2]))
-    window.pre_gen_button.click()
+    assert not hasattr(window, "pre_gen_button")
+    window.generate_routes(pre_generate=True)
     finish_generation(window, app)
     assert window.respect_existing_routes and window.respect_routes_toggle.isChecked()
     complete = [route for route in window.data.routes.values() if all(route.stops)]
@@ -561,15 +562,16 @@ def test_load_project_can_restore_larger_bounds_and_cancel_unsaved_replacement(
 def test_routes_tab_edit_updates_map_assignments_guests_and_verification(window, monkeypatch):
     window.verify_change_toggle.setChecked(True)
     table, _ = window.tables["routes"]
-    assert [table.horizontalHeaderItem(i).text() for i in range(4)] == [
+    assert [table.horizontalHeaderItem(i).text() for i in range(5)] == [
+        "",
         "ID",
         "Appetizer",
         "Main dish",
         "Dessert",
     ]
-    assert window.tables["participants"][0].columnCount() == 5
+    assert window.tables["participants"][0].columnCount() == 6
     table.selectRow(0)
-    route_id = table.item(0, 0).text()
+    route_id = table.item(0, 1).text()
 
     def edit(dialog):
         assert dialog.kind == "routes"
@@ -586,7 +588,7 @@ def test_routes_tab_edit_updates_map_assignments_guests_and_verification(window,
         "Participant is not assigned all 3 stops." in window.route_diagnostics["P001"]["warnings"]
     )
     assert "Unassigned" in window.course_controls[1][0].text()
-    assert window.tables["routes"][0].item(0, 2).text() == ""
+    assert window.tables["routes"][0].item(0, 3).text() == ""
     window.show_route_participant()
     assert window.selected_record("participants") == "P001"
 
@@ -602,30 +604,30 @@ def test_map_save_and_revert_update_separate_route_table(window):
     window.remove_map_stop(window.draft.session, 1)
     window.save_route()
     assert window.data.routes[rid].main_stop_id == ""
-    assert window.tables["routes"][0].item(0, 2).text() == ""
+    assert window.tables["routes"][0].item(0, 3).text() == ""
     assert window.data.participants["P001"].route_id == rid
 
 
 def test_table_sorting_preserves_selection_search_and_reference_navigation(window):
     table, search = window.tables["participants"]
     table.selectRow(0)
-    table.sortItems(1, Qt.DescendingOrder)
-    assert [table.item(row, 1).text() for row in range(3)] == sorted(
+    table.sortItems(2, Qt.DescendingOrder)
+    assert [table.item(row, 2).text() for row in range(3)] == sorted(
         [p.name for p in window.data.participants.values()], reverse=True
     )
     selected = window.selected_record("participants")
     window.refresh()
     assert window.selected_record("participants") == selected
-    assert table.item(0, 1).text() == "Robin & Kim"
+    assert table.item(0, 2).text() == "Robin & Kim"
     search.setText("Charlie")
-    table.sortItems(0, Qt.AscendingOrder)
+    table.sortItems(1, Qt.AscendingOrder)
     for row in range(table.rowCount()):
-        assert table.isRowHidden(row) == (table.item(row, 0).text() != "P003")
+        assert table.isRowHidden(row) == (table.item(row, 1).text() != "P003")
     search.clear()
-    table.sortItems(0, Qt.DescendingOrder)
-    window.table_clicked("participants", 0, 3)
+    table.sortItems(1, Qt.DescendingOrder)
+    window.table_clicked("participants", 0, 4)
     assert window.tabs.currentIndex() == 3
-    window.table_clicked("routes", window.tables["routes"][0].currentRow(), 2)
+    window.table_clicked("routes", window.tables["routes"][0].currentRow(), 3)
     assert window.selected_record("stops") == "S002"
 
 
@@ -635,8 +637,8 @@ def test_guest_links_names_and_navigation_survive_sorting(window, monkeypatch):
     shown = []
     monkeypatch.setattr(QToolTip, "showText", lambda point, name, widget: shown.append(name))
     table, _ = window.tables["stops"]
-    table.sortItems(0, Qt.DescendingOrder)
-    guests = table.cellWidget(0, 2)
+    table.sortItems(1, Qt.DescendingOrder)
+    guests = table.cellWidget(0, 3)
     assert 'href="P001"' in guests.text()
     guests.linkHovered.emit("P001")
     assert shown == ["Alex & Sam"]
@@ -650,7 +652,7 @@ def test_guest_links_names_and_navigation_survive_sorting(window, monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "kind,column,target_tab", [("participants", 3, 3), ("stops", 1, 1), ("routes", 1, 2)]
+    "kind,column,target_tab", [("participants", 4, 3), ("stops", 2, 1), ("routes", 2, 2)]
 )
 def test_reference_cells_require_double_click(window, kind, column, target_tab):
     table = window.tables[kind][0]
@@ -671,6 +673,7 @@ def test_deletion_preview_can_cancel_or_clear_references(window, monkeypatch, ki
     table = window.tables[kind][0]
     table.selectRow(0)
     rid = window.selected_record(kind)
+    window.checked_entries[kind].add(rid)
     before = deepcopy(window.data)
     inspected = []
 
@@ -886,7 +889,7 @@ def test_settings_theme_switch_updates_tables_and_can_return_to_light(window):
     window.dark_mode_toggle.setChecked(True)
     assert window.dark_mode
     assert window.palette().color(window.palette().ColorRole.Window).name() != light
-    assert window.tables["participants"][0].item(0, 3).foreground().color().name() == "#68cfba"
+    assert window.tables["participants"][0].item(0, 4).foreground().color().name() == "#68cfba"
     dialog = RecordDialog(window.data, "participants", parent=window)
     assert dialog.palette().color(dialog.palette().ColorRole.Window).name() == "#141d24"
     window.dark_mode_toggle.setChecked(False)
@@ -1046,8 +1049,9 @@ def test_course_center_uses_current_draft_coordinates(window, monkeypatch):
     window.enable_map = False
 
 
+@pytest.mark.parametrize("use_selection", [True, False])
 def test_find_addresses_runs_background_worker_and_only_fills_missing_coordinates(
-    window, monkeypatch, tmp_path, app
+    window, monkeypatch, tmp_path, app, use_selection
 ):
     from PySide6.QtCore import QElapsedTimer
     from PySide6.QtTest import QTest
@@ -1058,6 +1062,9 @@ def test_find_addresses_runs_background_worker_and_only_fills_missing_coordinate
 
     window.data.participants["P004"] = Participant(id="P004", name="New", address="Street")
     window.data.participants["P005"] = Participant(id="P005", name="Empty address")
+    window.data.participants["P006"] = Participant(
+        id="P006", name="Unchecked", address="Skip this address"
+    )
     requested = []
 
     class Provider:
@@ -1076,6 +1083,7 @@ def test_find_addresses_runs_background_worker_and_only_fills_missing_coordinate
     monkeypatch.setattr(QMessageBox, "exec", lambda self: QMessageBox.Ok)
     original = window.data.participants["P001"].latitude
     window.verify_change_toggle.setChecked(True)
+    window.checked_entries["participants"] = {"P001", "P004", "P005"} if use_selection else set()
     window.find_addresses_button.click()
     timer = QElapsedTimer()
     timer.start()
@@ -1083,10 +1091,11 @@ def test_find_addresses_runs_background_worker_and_only_fills_missing_coordinate
         app.processEvents()
         QTest.qWait(10)
     assert window.address_worker is None
-    assert requested == ["Street"]
+    assert requested == (["Street"] if use_selection else ["Street", "Skip this address"])
     assert window.data.participants["P004"].latitude == 59.31
     assert window.data.participants["P001"].latitude == original
     assert window.data.participants["P005"].latitude is None
+    assert window.data.participants["P006"].latitude == (None if use_selection else 59.31)
     assert window.dirty and window.verified
     assert window.find_addresses_button.isEnabled()
 
@@ -1130,7 +1139,7 @@ def test_allergies_editor_results_button_and_solution_summary(window, tmp_path, 
     assert dialog.result_record.allergies == "tree nuts, cow milk"
     participant.allergies = dialog.result_record.allergies
     window.refresh()
-    assert window.tables["participants"][0].item(0, 4).text() == participant.allergies
+    assert window.tables["participants"][0].item(0, 5).text() == participant.allergies
     assert window.export_results_button.text() == "Export results"
     assert "Average total distance" in window.solution_info.toPlainText()
     window.verify_routes()

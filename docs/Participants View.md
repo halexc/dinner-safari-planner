@@ -28,7 +28,7 @@ Allergy text is stored in project files and table exports. It does not constrain
 
 ## Finding coordinates
 
-Click **Find Addresses** to look up participants with an address but no coordinates. The lookup uses Photon with OpenStreetMap data and requires internet access. Existing coordinates are preserved.
+Check the participant rows, then click **Find Addresses** to look up checked participants with an address but no coordinates. If no rows are checked, it looks up all participants without coordinates. The lookup uses Photon with OpenStreetMap data and requires internet access. Existing coordinates are preserved.
 
 Include street, city, and country for better matches. The progress dialog allows cancellation; completed lookups are retained. The final summary reports outcomes. Check locations on the map and correct coordinates manually when necessary.
 
@@ -56,3 +56,5 @@ Use `.dsf` for a complete event backup. Generated participant IDs do not automat
 Deleting a participant also deletes their route, clears their host and guest references, and removes stops left without participant references. Stops unique to a deleted route can also be removed. Other routes can become incomplete and need verification afterwards.
 
 **Delete all** affects every participant, including rows hidden by a search. Save a project copy first if you need to retain the data.
+
+Use the row checkboxes for **Remove selected** and group actions. **Edit selected** still affects the last active row. See [checkbox selection and data groups](<Data Groups.md>) for range selection, shared membership, and filters.

@@ -18,7 +18,7 @@ The map background requires internet access. If a participant is missing from th
 
 ### Map display and marker outlines
 
-The dropdown switches between the selected route, all routes, and host locations. **Show host locations** controls additional host markers; selected-route stops remain visible. During editing, the map shows the hosts needed for editing and these display controls are disabled.
+The first dropdown switches between the selected route, all routes, and host locations. **Show host locations** controls additional host markers; selected-route stops remain visible. During editing, the map shows the hosts needed for editing and these display controls are disabled.
 
 The map key below the controls explains the marker outlines:
 
@@ -137,12 +137,6 @@ A feasible result opens a review dialog with course assignments, distances, and 
 
 Enable **Respect existing routes** to preserve every assigned stop. Empty slots are completed and participants without routes receive routes. Other participants may join existing stops. Conflicting fixed assignments must be repaired, or the setting disabled, before trying again.
 
-### Pre-Gen
-
-**Pre-Gen** randomly and greedily seeds routes for up to 25% of participants, rounded down. Each seed owner hosts appetizer, its three host locations are separate from those on other seed routes, and both segments fall within the preferred limits. Existing assignments are retained, and generated changes must pass error checks.
-
-It may create fewer routes than the target when suitable combinations are unavailable. Results are applied directly and **Respect existing routes** is enabled, so full generation keeps the seeded assignments. At least four participants are needed to seed a route. Save a project copy before experimenting if you want to compare plans.
-
 ## Solution information
 
 The scrollable panel below the map reports average total distance, shortest and longest legs, shortest and longest total route distances, and each warning or error type present with its icon and occurrence count.
@@ -152,3 +146,5 @@ Issue counts describe routes reporting that type, not individual offending stops
 Distances are straight-line estimates for appetizer → main dish and main dish → dessert. They are not cycling directions and exclude travel from home to appetizer or onwards after dessert. Total-distance statistics use only complete routes with all coordinates; leg statistics include individually measurable segments.
 
 For participant handouts, use **Export results** in the top bar. See [Project files and CSV](<Project Files and CSV.md>).
+
+The second Map display dropdown filters by [data groups](<Data Groups.md>); both dropdowns have equal widths and group options display their colors. **Color by Groups** is initially off. Enable it to add a wider outer outline at 50% opacity to group members while retaining their course outlines. **Verify all routes** and **Generate Routes** are placed side by side below the route list.

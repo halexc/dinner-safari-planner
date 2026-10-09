@@ -45,3 +45,5 @@ Export an existing table to obtain a template. Import replaces the Stops table r
 **Remove selected** lets you review affected references and confirm deletion. Deleting a stop clears all route assignments referring to it. The route records remain, even when empty.
 
 **Delete all** removes every stop, including rows hidden by search, and clears references from Routes. Participants remain. Verify afterwards to find incomplete or empty routes.
+
+Use the row checkboxes for **Remove selected** and group actions. **Edit selected** still affects the last active row. See [checkbox selection and data groups](<Data Groups.md>) for range selection, shared membership, and filters.

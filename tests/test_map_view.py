@@ -1,5 +1,5 @@
-from cykelfest_routing.data import Participant, Stop, demo_data
-from cykelfest_routing.map_view import STOP_OUTLINES, host_outlines, map_html
+from cykelfest_routing.data import DataGroup, Participant, Stop, demo_data
+from cykelfest_routing.map_view import STOP_OUTLINES, host_group_colors, host_outlines, map_html
 from cykelfest_routing.route_edit import RouteDraft
 
 
@@ -39,3 +39,16 @@ def test_route_focusing_uses_course_locations_instead_of_all_hosts():
     assert "[60.0, 19.0]" not in focused_bounds
     assert "bridge.selectRoute" in focused
     assert "bubblingMouseEvents" in focused
+
+
+def test_group_halos_normal_and_draft_maps():
+    data = demo_data()
+    data.groups["g"] = DataGroup(id="g", name="Group", color="#abcdef", stops=["S001"])
+    assert host_group_colors(data) == {"P001": "#abcdef"}
+    plain = map_html(data, "P001", "All routes", True)
+    colored = map_html(data, "P001", "All routes", True, color_by_groups=True)
+    assert "0 0 0 6px #abcdef80" not in plain
+    assert "0 0 0 6px #abcdef80" in colored
+    draft = RouteDraft(data, "P001")
+    html = map_html(data, "P001", "All routes", True, draft, color_by_groups=True)
+    assert '"groupColor": "#abcdef"' in html
