@@ -39,7 +39,7 @@
         element.style.justifyContent = 'center';
         marker.bindTooltip('');
         element.addEventListener('pointerdown', event => {
-            if (event.button !== 0 || !bridge || busy || gesture) return;
+            if (event.button !== 0 || !bridge || busy || gesture || record.host.locked) return;
             event.preventDefault();
             event.stopPropagation();
             gesture = {host: record.host, x: event.clientX, y: event.clientY, moved: false};
@@ -50,7 +50,7 @@
         element.addEventListener('contextmenu', event => {
             event.preventDefault();
             event.stopPropagation();
-            if (!bridge || busy || gesture || !record.indices.length) return;
+            if (!bridge || busy || gesture || !record.indices.length || record.host.locked) return;
             if (record.indices.length === 1) {
                 removeCourse(record.indices[0]);
             } else {
@@ -71,6 +71,10 @@
         return record;
     }
     function render(course, duringDrag = false) {
+        const hostIds = new Set(state.hosts.map(host => host.id));
+        for (const [id, record] of markers) {
+            if (!hostIds.has(id)) { nodes.removeLayer(record.marker); markers.delete(id); }
+        }
         route.clearLayers();
         const edges = [];
         for (let i = 0; i < 2; i++) {
@@ -89,7 +93,7 @@
             const record = markers.get(host.id) || createMarker(host);
             record.host = host;
             record.indices = indices;
-            record.marker.setOpacity(host.eligible[course] ? 1 : 0.25);
+            record.marker.setOpacity(host.locked || host.eligible[course] ? 1 : 0.25);
             const element = record.marker.getElement();
             // Keep hover, removal and continuation gestures available. Python
             // still rejects assignments to unavailable hosts in Safe Edit.
@@ -101,6 +105,10 @@
                 `width:${indices.length ? 32 : 24}px;height:${indices.length ? 32 : 24}px;` +
                 `background:${color};border:${mainAnchor ? 4 : 3}px solid ${host.outline};`;
             circle.textContent = indices.map(index => index + 1).join('/');
+            if (host.locked) {
+                circle.style.background = `repeating-linear-gradient(135deg,${color} 0px,${color} 4px,#18232ddd 4px,#18232ddd 8px)`;
+                element.style.cursor = 'not-allowed';
+            }
             record.marker.setTooltipContent(text(host.name) + ' · ' + host.guests[markerCourse] + ' ' + labels.guests +
                 (host.eligible[course] ? '' : ' · ' + labels.unavailable) +
                 (indices.length ? ' · ' + labels.rightClick : ''));

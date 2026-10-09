@@ -6,6 +6,23 @@ from PySide6.QtCore import QPointF, Qt
 from PySide6.QtGui import QColor, QIcon, QPainter, QPalette, QPen, QPixmap, QPolygonF
 
 
+def group_icon():
+    """Draw a group symbol for the light-blue collaboration button."""
+    pixmap = QPixmap(40, 40)
+    pixmap.fill(Qt.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing)
+    painter.setPen(QPen(QColor("#164b68"), 2.5))
+    for x, y, radius in ((9, 15, 3), (31, 15, 3), (20, 10, 4)):
+        painter.drawEllipse(QPointF(x, y), radius, radius)
+    painter.drawArc(2, 22, 14, 14, 0, 180 * 16)
+    painter.drawArc(24, 22, 14, 14, 0, 180 * 16)
+    painter.drawArc(11, 20, 18, 18, 0, 180 * 16)
+    painter.end()
+    pixmap.setDevicePixelRatio(2)
+    return QIcon(pixmap)
+
+
 def course_icon(kind, dark):
     """Draw crisp icons without depending on installed symbol fonts."""
     pixmap = QPixmap(40, 40)
@@ -23,6 +40,9 @@ def course_icon(kind, dark):
             (29, 20, 37, 20),
         ):
             painter.drawLine(x1, y1, x2, y2)
+    elif kind == "copy":
+        painter.drawRoundedRect(7, 12, 19, 23, 2, 2)
+        painter.drawRoundedRect(14, 5, 19, 23, 2, 2)
     else:
         painter.drawPolygon(
             QPolygonF(

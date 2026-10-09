@@ -4,11 +4,17 @@
 
 ## Top-bar actions
 
+### New Project
+
+**New Project** starts an empty event with default project settings. System preferences, including language, theme, delimiter, and solver time, remain unchanged. If the current project has unsaved changes, a confirmation lets you cancel or discard them. Save the current event first if you want to keep it. Finish route editing or background work before starting a new project.
+
 ### Save Project
 
 **Save Project** writes a `.dsf` file with all three tables, their references, and project settings, including warning preferences. Use it to resume planning or share a complete event.
 
 System preferences such as theme, language, delimiter, and solver time remain on the computer. Finish a route draft before saving. The route panel's **Save** commits only to the current workspace; **Save Project** writes the event to disk.
+
+The Save Project button is neutral when the project has no tracked changes. It becomes highlighted after a data or project-setting change and returns to neutral after a successful save, load, or new project. Changing system preferences does not mark the project as changed.
 
 The format is a versioned JSON document; manual editing is normally unnecessary. Verification results are recalculated rather than saved permanently.
 

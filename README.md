@@ -11,6 +11,11 @@ The application uses `res/icon.ico` on Windows and `res/icon.icns` on Mac.
 For a tour of all five views, planning workflows, and file operations, see the
 [Bike Party user guide](docs/README.md).
 
+Use **Collaborate** to host a project on a local network or VPN, or connect to a
+host at `address:45454`. The host synchronizes saved edits and project settings;
+striped map nodes show edits reserved by other collaborators. See the
+[collaboration guide](docs/Collaboration.md) for setup and supported behavior.
+
 ## Environment
 
 Use Python 3.13 (64-bit). A project-local `.venv` is installed; no global Python

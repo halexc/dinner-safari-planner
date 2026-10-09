@@ -77,7 +77,9 @@ def map_html(
     dark=False,
     map_style="standard",
     focus_route=False,
+    locked_hosts=None,
 ) -> str:
+    locked_hosts = locked_hosts or {}
     points = [
         (p.latitude, p.longitude) for p in data.participants.values() if p.latitude is not None
     ]
@@ -102,18 +104,26 @@ def map_html(
     if draft is None:
         for host in data.participants.values():
             numbers = selected_hosts.get(host.id, [])
-            if host.latitude is not None and (show_hosts or numbers):
-                if numbers:
+            if host.latitude is not None and (show_hosts or numbers or host.id in locked_hosts):
+                if numbers or host.id in locked_hosts:
+                    background = (
+                        "repeating-linear-gradient(135deg,#187f71 0px,#187f71 4px,#18232ddd 4px,#18232ddd 8px)"
+                        if host.id in locked_hosts
+                        else "#187f71"
+                    )
                     marker = folium.Marker(
                         [host.latitude, host.longitude],
                         icon=folium.DivIcon(
                             icon_size=(28, 28),
                             icon_anchor=(14, 14),
-                            html=f'<div style="width:28px;height:28px;box-sizing:border-box;border:3px solid {outlines[host.id]};border-radius:50%;background:#187f71;color:white;display:flex;align-items:center;justify-content:center;font:bold 13px sans-serif;box-shadow:0 1px 4px #0005">'
+                            html=f'<div style="width:28px;height:28px;box-sizing:border-box;border:3px solid {outlines[host.id]};border-radius:50%;background:{background};color:white;display:flex;align-items:center;justify-content:center;font:bold 13px sans-serif;box-shadow:0 1px 4px #0005">'
                             + "/".join(map(str, numbers))
                             + "</div>",
                         ),
-                        tooltip=safe_text(host.name),
+                        tooltip=safe_text(
+                            host.name
+                            + (" · " + locked_hosts[host.id] if host.id in locked_hosts else "")
+                        ),
                         popup=f"<b>{safe_text(host.name)}</b><br>{safe_text(host.address)}",
                     ).add_to(map_)
                 else:
@@ -192,6 +202,8 @@ def map_html(
         )
         registration = f"window.cykelfestOverlap.setData([{node_js}], [{edge_js}]);"
         html += "<script>" + registration.replace("<", "\\u003c") + "</script>"
+        blocked = ",".join(node["marker"] for node in nodes if node["id"] in locked_hosts)
+        html += f"<script>for (const marker of [{blocked}]) {{ marker.unbindPopup(); marker.on('click', e => L.DomEvent.stop(e.originalEvent)); }}</script>"
         interactions = ",".join(
             f"{{line:{edge['line']}, participant:{json.dumps(edge['participant'])}}}"
             for edge in edges
@@ -217,7 +229,12 @@ def map_html(
             + json.dumps(labels).replace("<", "\\u003c")
             + ";</script>"
         )
-        payload = json.dumps(draft.payload()).replace("<", "\\u003c")
+        state = draft.payload()
+        for host in state["hosts"]:
+            host["locked"] = locked_hosts.get(host["id"], "")
+            if host["locked"]:
+                host["eligible"] = [False, False, False]
+        payload = json.dumps(state).replace("<", "\\u003c")
         editor = Path(__file__).with_name("map_editor.js").read_text(encoding="utf-8")
         html += (
             '<script src="qrc:///qtwebchannel/qwebchannel.js"></script>'

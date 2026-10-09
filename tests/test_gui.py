@@ -51,6 +51,83 @@ def test_tabs_reference_navigation_and_search(window):
     assert window.selected_record("participants") == "P002"
 
 
+def test_new_project_resets_project_but_preserves_system_preferences(window, monkeypatch):
+    from pathlib import Path
+
+    from PySide6.QtWidgets import QMessageBox
+
+    from cykelfest_routing.project import ProjectSettings
+
+    window.dark_mode_toggle.setChecked(True)
+    window.delimiter_combo.setCurrentIndex(window.delimiter_combo.findData(";"))
+    window.solver_time_control.setValue(75)
+    window.safe_edit_toggle.setChecked(False)
+    window.minimum_segment.setValue(1)
+    window.respect_routes_toggle.setChecked(True)
+    window.warning_toggles["Repeat meetups."].setChecked(True)
+    window.warning_sliders["Repeat meetups."].setValue(2500)
+    window.project_path = Path("previous.dsf")
+    window.tables["participants"][1].setText("missing")
+    window.verify_routes()
+    assert window.dirty
+    original = window.data
+    monkeypatch.setattr(QMessageBox, "question", lambda *args: QMessageBox.No)
+    window.new_project_button.click()
+    assert window.data is original and window.dirty
+    assert window.project_path == Path("previous.dsf")
+
+    monkeypatch.setattr(QMessageBox, "question", lambda *args: QMessageBox.Yes)
+    window.new_project_button.click()
+    assert not window.data.participants and not window.data.stops and not window.data.routes
+    assert window.project_path is None and not window.dirty
+    assert window.project_settings() == ProjectSettings()
+    assert not window.route_diagnostics and not window.verification_signatures
+    assert window.routes.count() == 0 and window.selected_route is None
+    assert all(
+        table.rowCount() == 0 and not search.text() for table, search in window.tables.values()
+    )
+    assert window.dark_mode and window.csv_delimiter == ";" and window.solver_maximum_time == 75
+    assert window.tabs.currentIndex() == 0
+    assert window.save_project_button.objectName() == window.load_project_button.objectName()
+    assert window.windowTitle() == "Bike Party · Dinner safari planner"
+
+
+def test_save_project_style_tracks_unsaved_data_and_settings(window, monkeypatch, tmp_path):
+    from PySide6.QtWidgets import QFileDialog
+
+    assert window.save_project_button.objectName() == ""
+    window.dark_mode_toggle.setChecked(True)
+    assert not window.dirty and window.save_project_button.objectName() == ""
+    window.minimum_segment.setValue(0.75)
+    assert window.dirty and window.save_project_button.objectName() == "primary"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *args: ("", ""))
+    window.save_project()
+    assert window.dirty and window.save_project_button.objectName() == "primary"
+    path = tmp_path / "saved.dsf"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *args: (str(path), ""))
+    window.save_project()
+    assert not window.dirty and window.save_project_button.objectName() == ""
+    window.changed()
+    assert window.save_project_button.objectName() == "primary"
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *args: (str(path), ""))
+    from PySide6.QtWidgets import QMessageBox
+
+    monkeypatch.setattr(QMessageBox, "question", lambda *args: QMessageBox.Yes)
+    window.load_project()
+    assert not window.dirty and window.save_project_button.objectName() == ""
+
+
+def test_new_project_cannot_replace_active_draft(window):
+    from cykelfest_routing.route_edit import RouteDraft
+
+    original = window.data
+    window.draft = RouteDraft(window.data, "P001")
+    window.set_editing(True)
+    assert not window.new_project_button.isEnabled()
+    window.new_project()
+    assert window.data is original and window.draft is not None
+
+
 def test_verification_highlights_conflicts_and_edit_invalidates_checks(window):
     window.data.route_for("P001").dessert_stop_id = "missing"
     window.verify_routes()

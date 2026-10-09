@@ -239,4 +239,11 @@ class MapBridge(QObject):
         self.window.select_map_route(participant_id)
 
     def publish(self, draft):
-        self.stateChanged.emit(json.dumps(draft.payload()))
+        payload = draft.payload()
+        collaboration = getattr(self.window, "collaboration", None)
+        locked = collaboration.foreign_nodes() if collaboration else {}
+        for host in payload["hosts"]:
+            host["locked"] = locked.get(host["id"], "")
+            if host["locked"]:
+                host["eligible"] = [False, False, False]
+        self.stateChanged.emit(json.dumps(payload))

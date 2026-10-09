@@ -55,6 +55,8 @@ from PySide6.QtWidgets import (
 )
 
 from .app_icon import application_icon, set_windows_app_id
+from .collaboration import CollaborationSession, decode_snapshot, difference, resources, snapshot
+from .collaboration_dialog import CollaborationDialog
 from .data import (
     COURSES,
     CSV_REQUIRED,
@@ -179,6 +181,11 @@ class RecordDialog(QDialog):
         layout = QVBoxLayout(self)
         form = QFormLayout()
         self.fields = {}
+        locked = (
+            parent.collaboration.foreign_nodes()
+            if parent and hasattr(parent, "collaboration")
+            else {}
+        )
         names = {
             "participants": ("id", "name", "address", "allergies", "latitude", "longitude"),
             "stops": ("id", "host", "guests", "course"),
@@ -208,10 +215,14 @@ class RecordDialog(QDialog):
                 for stop in data.stops.values():
                     host = data.participants.get(stop.host)
                     eligible = host and data.route_stops(host.id)[index] in ("", stop.id)
-                    if stop.course == COURSES[index] and (
-                        not getattr(parent, "safe_edit", True)
-                        or eligible
-                        or stop.id == values.get(name)
+                    if (
+                        stop.host not in locked
+                        and stop.course == COURSES[index]
+                        and (
+                            not getattr(parent, "safe_edit", True)
+                            or eligible
+                            or stop.id == values.get(name)
+                        )
                     ):
                         field.addItem(
                             f"{stop.id} · {host.name if host else tr('Host unavailable')}", stop.id
@@ -230,6 +241,8 @@ class RecordDialog(QDialog):
                 else:
                     field.addItem(tr("Unassigned"), "")
                     for p in data.participants.values():
+                        if p.id in locked:
+                            continue
                         field.addItem(f"{p.id} · {p.name}", p.id)
                 value = values.get(name)
                 if value:
@@ -603,6 +616,14 @@ class MainWindow(QMainWindow):
         self.enable_map = enable_map
         self.verified = False
         self.dirty = False
+        self.collaboration = CollaborationSession(self)
+        self.syncing_collaboration = False
+        self.collaboration_client_joined = False
+        self.map_reload_serial = 0
+        self.collaboration.state_received.connect(self.receive_collaboration_state)
+        self.collaboration.status_changed.connect(self.update_collaboration_controls)
+        self.collaboration.locks_changed.connect(self.refresh_collaboration_locks)
+        self.collaboration.failed.connect(self.collaboration_error)
         self.project_path = None
         self.exported = set()
         self.draft = None
@@ -665,8 +686,22 @@ class MainWindow(QMainWindow):
         self.counts = label("")
         self.counts.setWordWrap(False)
         heading.addWidget(self.counts)
-        self.save_project_button = button(tr("Save Project"), self.save_project, True)
+        from .theme import group_icon
+
+        self.collaborate_button = QPushButton(tr("Collaborate"))
+        self.collaborate_button.clicked.connect(self.open_collaboration)
+        self.collaborate_button.setIcon(group_icon())
+        self.collaborate_button.setIconSize(QSize(20, 20))
+        self.collaborate_button.setStyleSheet(
+            "QPushButton { background: #b9e3f7; color: #164b68; border: 1px solid #83c8e9; }"
+            "QPushButton:hover { background: #a3d9f2; border-color: #5fb4df; }"
+            "QPushButton:pressed { background: #8dceed; }"
+        )
+        self.new_project_button = button(tr("New Project"), self.new_project)
+        self.save_project_button = button(tr("Save Project"), self.save_project, self.dirty)
         self.load_project_button = button(tr("Load Project"), self.load_project)
+        heading.addWidget(self.collaborate_button)
+        heading.addWidget(self.new_project_button)
         heading.addWidget(self.save_project_button)
         heading.addWidget(self.load_project_button)
         self.export_results_button = button(tr("Export results"), self.export_results)
@@ -682,6 +717,7 @@ class MainWindow(QMainWindow):
         self.build_settings_tab()
         self.setCentralWidget(root)
         self.apply_theme(self.dark_mode)
+        self.update_collaboration_controls()
         if self.verify_on_change:
             self.verify_routes()
 
@@ -1036,13 +1072,194 @@ class MainWindow(QMainWindow):
             )
 
     def project_settings_changed(self, *_):
-        self.dirty = True
+        if not self.syncing_collaboration and self.collaboration.mode == "host":
+            self.sync_collaboration()
+        self.set_project_dirty(True)
+
+    def open_collaboration(self):
+        if self.draft or self.address_worker or self.solver_worker:
+            self.statusBar().showMessage(
+                tr("Finish route editing or background work before collaborating.")
+            )
+            return
+        CollaborationDialog(self).exec()
+
+    def collaboration_error(self, message):
+        QMessageBox.warning(self, tr("Collaborate"), tr(message))
+
+    def update_collaboration_controls(self):
+        if not hasattr(self, "collaborate_button"):
+            return
+        active = self.collaboration.mode in ("host", "client")
+        client = self.collaboration.mode == "client"
+        if self.collaboration.mode == "offline":
+            self.collaboration_client_joined = False
+        self.collaborate_button.setText(tr("Collaborating...") if active else tr("Collaborate"))
+        self.collaborate_button.setStyleSheet(
+            "QPushButton { background: #74bde4; color: #164b68; border: 1px solid #4c9ecb; }"
+            if active
+            else "QPushButton { background: #b9e3f7; color: #164b68; border: 1px solid #83c8e9; }"
+        )
+        editing = self.draft is not None
+        if self.collaboration.mode == "offline" and not editing:
+            for index in (1, 2, 3):
+                self.tabs.setTabEnabled(index, True)
+        for control in (
+            self.new_project_button,
+            self.load_project_button,
+            self.export_results_button,
+            self.clear_routes_button,
+            self.generate_routes_button,
+            self.pre_gen_button,
+            self.find_addresses_button,
+            *getattr(self, "host_only_controls", []),
+        ):
+            control.setEnabled(
+                not client
+                and not editing
+                and self.address_worker is None
+                and not self.collaboration.locks
+            )
+        self.export_results_button.setEnabled(not client and not editing)
+        for control in (
+            self.safe_edit_toggle,
+            self.respect_routes_toggle,
+            self.minimum_segment,
+            self.maximum_segment,
+            *self.warning_toggles.values(),
+            *self.warning_minimization_toggles.values(),
+            *self.warning_sliders.values(),
+        ):
+            control.setEnabled(not client and not self.collaboration.locks)
+        for warning, slider in self.warning_sliders.items():
+            slider.setEnabled(
+                not client and not self.collaboration.locks and warning not in self.ignored_warnings
+            )
+        if not editing:
+            self.add_route_button.setEnabled(not (client and self.collaboration.busy))
+            self.edit_route_button.setEnabled(
+                bool(self.selected_route) and not (client and self.collaboration.busy)
+            )
+            self.remove_route_button.setEnabled(
+                bool(self.selected_route) and not (client and self.collaboration.busy)
+            )
+        foreign = self.collaboration.foreign_nodes()
+        if self.selected_route:
+            hosts = [
+                self.data.stops[sid].host
+                for sid in self.data.route_stops(self.selected_route)
+                if sid in self.data.stops
+            ]
+            if self.selected_route in foreign or any(host in foreign for host in hosts):
+                self.edit_route_button.setEnabled(False)
+                self.remove_route_button.setEnabled(False)
+            for index, (_, _, edit) in enumerate(self.course_controls):
+                stop = self.data.stops.get(self.data.route_stops(self.selected_route)[index])
+                edit.setEnabled(
+                    self.selected_route not in foreign and (not stop or stop.host not in foreign)
+                )
+
+    def refresh_collaboration_locks(self):
+        self.update_collaboration_controls()
+        if hasattr(self, "map"):
+            if self.draft:
+                self.map_bridge.publish(self.draft)
+            else:
+                self.refresh_map()
+
+    def receive_collaboration_state(self, state):
+        initial = self.collaboration.mode == "client" and not self.collaboration_client_joined
+        if self.syncing_collaboration or (
+            not initial and snapshot(self.data, self.project_settings()) == state
+        ):
+            return
+        selected, tab, draft = self.selected_route, self.tabs.currentIndex(), self.draft
+        searches = {kind: search.text() for kind, (_, search) in self.tables.items()}
+        data, settings = decode_snapshot(state)
+        self.syncing_collaboration = True
+        try:
+            path = (
+                self.project_path
+                if self.collaboration.mode == "host" or self.collaboration_client_joined
+                else None
+            )
+            self.collaboration_client_joined = self.collaboration.mode == "client"
+            self.apply_project(data, settings, path)
+            if draft and draft.participant_id in data.participants:
+                hosts = [draft.host_at(i) for i in range(3)]
+                rebuilt = RouteDraft(data, draft.participant_id, safe_edit=self.safe_edit)
+                rebuilt.session = draft.session
+                for i, host in enumerate(hosts):
+                    if host != rebuilt.host_at(i):
+                        rebuilt.replace(i, host) if host else rebuilt.remove(i)
+                self.draft = rebuilt
+            else:
+                self.draft = None
+            self.refresh(selected if selected in data.participants else None)
+            self.tabs.setCurrentIndex(tab)
+            for kind, text in searches.items():
+                self.tables[kind][1].setText(text)
+            self.set_project_dirty(True)
+            self.update_collaboration_controls()
+        finally:
+            self.syncing_collaboration = False
+
+    def sync_collaboration(self):
+        if self.syncing_collaboration or self.collaboration.mode not in ("host", "client"):
+            return True
+        selected = self.selected_route
+        self.syncing_collaboration = True
+        enabled = self.centralWidget().isEnabled()
+        self.centralWidget().setEnabled(False)
+        try:
+            self.collaboration.publish(self.data, self.project_settings())
+        except ValueError as error:
+            self.collaboration_error(str(error))
+            return False
+        finally:
+            self.syncing_collaboration = False
+            self.centralWidget().setEnabled(enabled)
+            if self.collaboration.state is not None:
+                self.receive_collaboration_state(self.collaboration.state)
+                if selected in self.data.participants:
+                    self.refresh(selected)
+        return True
+
+    def lock_nodes(self, nodes):
+        if self.collaboration.mode not in ("host", "client"):
+            return True
+        enabled = self.centralWidget().isEnabled()
+        self.centralWidget().setEnabled(False)
+        try:
+            self.collaboration.request("lock", {"nodes": list(set(nodes) - {None, ""})})
+            return True
+        except ValueError as error:
+            self.collaboration_error(str(error))
+            return False
+        finally:
+            self.centralWidget().setEnabled(enabled)
+
+    def release_nodes(self):
+        if self.collaboration.mode in ("host", "client"):
+            try:
+                self.collaboration.request("release")
+            except ValueError:
+                pass
+
+    def set_project_dirty(self, dirty):
+        self.dirty = dirty
+        self.save_project_button.setObjectName("primary" if dirty else "")
+        style = self.save_project_button.style()
+        style.unpolish(self.save_project_button)
+        style.polish(self.save_project_button)
+        self.save_project_button.update()
 
     def warning_preferences_changed(self, *_):
         self.ignored_warnings = {
             warning for warning, toggle in self.warning_toggles.items() if toggle.isChecked()
         }
-        self.dirty = True
+        self.set_project_dirty(True)
+        self.sync_collaboration()
         if self.verify_on_change:
             self.verify_routes()
         else:
@@ -1103,11 +1320,38 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, tr("Save Project failed"), error_text(error))
             return
         self.project_path = Path(path)
-        self.dirty = False
+        self.set_project_dirty(False)
         self.setWindowTitle(tr("{0} · Cykelfest", f"{self.project_path.name}"))
         self.statusBar().showMessage(tr("Saved project to {0}", f"{path}"))
 
+    def new_project(self):
+        if self.collaboration.mode == "client" or self.collaboration.locks:
+            return
+        if self.draft or self.address_worker is not None or self.solver_worker is not None:
+            self.statusBar().showMessage(
+                tr("Finish route editing or background work before creating a new project.")
+            )
+            return
+        if (
+            self.dirty
+            and QMessageBox.question(
+                self,
+                tr("New Project"),
+                tr("Create a new project and discard the current project's unsaved changes?"),
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            != QMessageBox.Yes
+        ):
+            return
+        self.apply_project(DinnerData(), ProjectSettings())
+        self.tabs.setCurrentIndex(0)
+        self.verification.setText(tr("Check course assignments and data references."))
+        self.statusBar().showMessage(tr("New project created."))
+
     def load_project(self):
+        if self.collaboration.mode == "client" or self.collaboration.locks:
+            return
         if self.draft or self.address_worker is not None or self.solver_worker is not None:
             self.statusBar().showMessage(
                 tr("Finish route editing or address lookup before loading a project.")
@@ -1138,8 +1382,18 @@ class MainWindow(QMainWindow):
             != QMessageBox.Yes
         ):
             return
+        self.apply_project(data, settings, Path(path))
+        self.statusBar().showMessage(tr("Loaded project from {0}", f"{path}"))
+
+    def apply_project(self, data, settings, path=None):
+        """Replace project state while retaining system preferences."""
+        if not self.syncing_collaboration and self.collaboration.mode == "host":
+            self.collaboration.replace(data, settings)
         self.data = data
+        self.project_path = path
+        self.set_project_dirty(False)
         self.pending_pairing = None
+        self.focus_selected_route = False
         for _, search in self.tables.values():
             search.clear()
         self.routes.blockSignals(True)
@@ -1197,10 +1451,11 @@ class MainWindow(QMainWindow):
             self.verify_routes()
         else:
             self.verification.setText(tr("Project loaded. Verify routes to check assignments."))
-        self.project_path = Path(path)
-        self.dirty = False
-        self.setWindowTitle(tr("{0} · Cykelfest", f"{self.project_path.name}"))
-        self.statusBar().showMessage(tr("Loaded project from {0}", f"{path}"))
+        self.setWindowTitle(
+            tr("{0} · Cykelfest", self.project_path.name)
+            if self.project_path
+            else tr("Cykelfest · Dinner safari planner")
+        )
 
     def segment_preferences_changed(self, *_):
         self.segment_preferences.minimum_km = self.minimum_segment.value()
@@ -1471,7 +1726,11 @@ class MainWindow(QMainWindow):
         table.model().layoutChanged.connect(lambda *_: self.filter_table(kind, search.text()))
         body.addWidget(table, 1)
         actions = QVBoxLayout()
-        actions.addWidget(button(tr("Import CSV"), lambda: self.import_csv(kind), True))
+        if kind == "participants":
+            self.host_only_controls = []
+        import_button = button(tr("Import CSV"), lambda: self.import_csv(kind), True)
+        self.host_only_controls.append(import_button)
+        actions.addWidget(import_button)
         actions.addWidget(button(tr("Export CSV"), lambda: self.export_csv(kind)))
         if kind == "participants":
             self.find_addresses_button = button(tr("Find Addresses"), self.find_addresses)
@@ -1486,7 +1745,9 @@ class MainWindow(QMainWindow):
             actions.addWidget(button(tr("Add"), lambda: self.edit_record(kind, new=True)))
         actions.addWidget(button(tr("Edit selected"), lambda: self.edit_record(kind)))
         actions.addWidget(button(tr("Remove selected"), lambda: self.remove_record(kind)))
-        actions.addWidget(button(tr("Delete all"), lambda: self.delete_all_records(kind)))
+        delete_all = button(tr("Delete all"), lambda: self.delete_all_records(kind))
+        self.host_only_controls.append(delete_all)
+        actions.addWidget(delete_all)
         if kind == "routes":
             actions.addWidget(button(tr("Show participant"), self.show_route_participant))
         actions.addStretch()
@@ -1666,7 +1927,8 @@ class MainWindow(QMainWindow):
         )
 
     def changed(self, selected=None):
-        self.dirty = True
+        self.sync_collaboration()
+        self.set_project_dirty(True)
         self.exported.clear()
         self.verification.setText(tr("Data changed. Verify routes again."))
         if self.verify_on_change:
@@ -1779,10 +2041,38 @@ class MainWindow(QMainWindow):
             dark=self.dark_mode,
             map_style=self.map_style,
             focus_route=self.focus_selected_route,
+            locked_hosts=self.collaboration.foreign_nodes(),
+        )
+        preserve_view = (
+            self.collaboration.mode in ("host", "client") and not self.focus_selected_route
         )
         self.focus_selected_route = False
         if self.enable_map:
-            self.map.setHtml(html, QUrl("https://cykelfest.local/"))
+            self.map_reload_serial += 1
+            serial = self.map_reload_serial
+
+            def install(view=None):
+                if serial != self.map_reload_serial:
+                    return
+                document = html
+                if isinstance(view, dict) and "center" in view and "zoom" in view:
+                    document = document.replace(
+                        "</html>",
+                        "<script>window.cykelfestMap.setView("
+                        + json.dumps(view["center"])
+                        + ","
+                        + json.dumps(view["zoom"])
+                        + ");</script></html>",
+                    )
+                self.map.setHtml(document, QUrl("https://cykelfest.local/"))
+
+            if preserve_view:
+                self.map.page().runJavaScript(
+                    "(() => { const m=window.cykelfestMap; if (!m) return null; const c=m.getCenter(); return {center:[c.lat,c.lng],zoom:m.getZoom()}; })()",
+                    install,
+                )
+            else:
+                install()
         else:
             self.map.setHtml(translate_html("<p>Map disabled for offline UI verification.</p>"))
 
@@ -1820,6 +2110,8 @@ class MainWindow(QMainWindow):
             return
         draft = self.draft or RouteDraft(self.data, pid, safe_edit=self.safe_edit)
         for host, stop in draft.choices(index):
+            if host.id in self.collaboration.foreign_nodes():
+                continue
             title = f"{stop.id if stop else tr('New stop')} · {host.name} · {host.address}"
             action = menu.addAction(title)
             action.setData(host.id)
@@ -1834,6 +2126,8 @@ class MainWindow(QMainWindow):
         remove.triggered.connect(lambda: self.replace_route_stop(index, None))
 
     def replace_route_stop(self, index, host_id):
+        if host_id and not self.lock_nodes([host_id]):
+            return
         if not self.draft:
             self.edit_route()
         if not self.draft:
@@ -1871,6 +2165,8 @@ class MainWindow(QMainWindow):
             QToolTip.hideText()
 
     def find_addresses(self):
+        if self.collaboration.mode == "client" or self.collaboration.locks:
+            return
         if self.address_worker is not None or self.draft or self.solver_worker is not None:
             return
         missing = [p for p in self.data.participants.values() if p.latitude is None]
@@ -1904,6 +2200,7 @@ class MainWindow(QMainWindow):
         worker = AddressWorker(addresses, cache_path, self)
         self.address_worker = worker
         self.find_addresses_button.setEnabled(False)
+        self.new_project_button.setEnabled(False)
         self.save_project_button.setEnabled(False)
         self.load_project_button.setEnabled(False)
         self.generate_routes_button.setEnabled(False)
@@ -1913,6 +2210,7 @@ class MainWindow(QMainWindow):
         worker.results_ready.connect(self.address_lookup_results)
         worker.finished.connect(self.address_lookup_finished)
         worker.start()
+        self.collaboration.set_busy(True)
 
     def address_lookup_progress(self, completed, total, address):
         self.address_progress.setLabelText(
@@ -1970,15 +2268,18 @@ class MainWindow(QMainWindow):
             dialog.exec()
 
     def address_lookup_finished(self):
+        self.collaboration.set_busy(False)
         worker = self.address_worker
         self.address_worker = None
         self.find_addresses_button.setEnabled(True)
+        self.new_project_button.setEnabled(self.draft is None)
         self.save_project_button.setEnabled(self.draft is None)
         self.load_project_button.setEnabled(self.draft is None)
         self.generate_routes_button.setEnabled(self.draft is None)
         self.pre_gen_button.setEnabled(self.draft is None)
         if worker:
             worker.deleteLater()
+        self.update_collaboration_controls()
         if self.closing_after_lookup:
             self.closing_after_lookup = False
             self.close()
@@ -2026,9 +2327,37 @@ class MainWindow(QMainWindow):
         rid = None if new else self.selected_record(kind)
         if not new and rid is None:
             return
+        nodes = []
+        if rid:
+            if kind == "participants":
+                nodes = [rid]
+            elif kind == "stops":
+                nodes = [self.data.stops[rid].host]
+            else:
+                owner = self.data.participant_for_route(rid)
+                nodes = [
+                    owner.id,
+                    *[
+                        self.data.stops[sid].host
+                        for sid in self.data.routes[rid].stops
+                        if sid in self.data.stops
+                    ],
+                ]
+        if not self.lock_nodes(nodes):
+            return
         dialog = RecordDialog(self.data, kind, getattr(self.data, kind).get(rid), self)
         if dialog.exec() == QDialog.Accepted:
             record = dialog.result_record
+            extra = (
+                [record.host]
+                if kind == "stops"
+                else [self.data.stops[sid].host for sid in record.stops if sid in self.data.stops]
+                if kind == "routes"
+                else []
+            )
+            if not self.lock_nodes(extra):
+                self.release_nodes()
+                return
             if kind == "routes":
                 participant = self.data.participant_for_route(record.id)
                 draft = RouteDraft(self.data, participant.id, safe_edit=self.safe_edit)
@@ -2039,10 +2368,12 @@ class MainWindow(QMainWindow):
                     draft.commit(self.data)
                 except ValueError as error:
                     QMessageBox.warning(self, tr("Route edit rejected"), error_text(error))
+                    self.release_nodes()
                     return
             else:
                 getattr(self.data, kind)[record.id] = record
             self.changed()
+        self.release_nodes()
 
     def show_route_participant(self):
         participant = self.data.participant_for_route(self.selected_record("routes"))
@@ -2056,6 +2387,8 @@ class MainWindow(QMainWindow):
         self.confirm_data_deletion(kind, [rid])
 
     def delete_all_records(self, kind):
+        if self.collaboration.mode == "client" or self.collaboration.locks:
+            return
         self.confirm_data_deletion(kind, list(getattr(self.data, kind)))
 
     def confirm_data_deletion(self, kind, record_ids):
@@ -2063,6 +2396,10 @@ class MainWindow(QMainWindow):
             return
         trial = deepcopy(self.data)
         trial.delete_records(kind, record_ids)
+        before = snapshot(self.data, self.project_settings())
+        patch = difference(before, snapshot(trial, self.project_settings()))
+        if not self.lock_nodes(resources(patch, before)):
+            return
         affected = []
         for table_kind in MODELS:
             original = getattr(self.data, table_kind)
@@ -2092,9 +2429,12 @@ class MainWindow(QMainWindow):
         dialog.button(QMessageBox.Yes).setText(tr("Delete and clear references"))
         dialog.setDefaultButton(QMessageBox.Cancel)
         if dialog.exec() == QMessageBox.Yes:
+            trial = deepcopy(self.data)
+            trial.delete_records(kind, record_ids)
             self.data = trial
             self.pending_pairing = None
             self.changed()
+        self.release_nodes()
 
     def add_route(self):
         if self.draft:
@@ -2107,13 +2447,26 @@ class MainWindow(QMainWindow):
             self.edit_route()
 
     def edit_route(self):
+        if self.collaboration.mode == "client" and self.collaboration.busy:
+            return
         if self.selected_route and self.draft is None:
+            nodes = [
+                self.selected_route,
+                *[
+                    self.data.stops[sid].host
+                    for sid in self.data.route_stops(self.selected_route)
+                    if sid in self.data.stops
+                ],
+            ]
+            if not self.lock_nodes(nodes):
+                return
             self.draft = RouteDraft(self.data, self.selected_route, safe_edit=self.safe_edit)
             self.set_editing(True)
             self.selection_changed()
             self.refresh_map()
 
     def set_editing(self, editing):
+        self.new_project_button.setEnabled(not editing and self.address_worker is None)
         self.save_project_button.setEnabled(not editing and self.address_worker is None)
         self.load_project_button.setEnabled(not editing and self.address_worker is None)
         self.routes.setEnabled(not editing)
@@ -2127,10 +2480,13 @@ class MainWindow(QMainWindow):
         self.show_hosts.setEnabled(not editing)
         for index in (1, 2, 3):
             self.tabs.setTabEnabled(index, not editing)
+        self.update_collaboration_controls()
 
     def map_gesture(self, session, start_host, end_host=None):
         if not self.draft or self.draft.session != session:
             return  # Ignore queued clicks from a closed editor or a replaced map document.
+        if not self.lock_nodes([start_host, end_host]):
+            return
         try:
             if end_host is None:
                 self.draft.click(start_host)
@@ -2151,6 +2507,7 @@ class MainWindow(QMainWindow):
             return
         pid = self.draft.participant_id
         self.draft = None
+        self.release_nodes()
         self.set_editing(False)
         if self.verify_on_change:
             self.verify_affected_routes(pid)
@@ -2185,6 +2542,7 @@ class MainWindow(QMainWindow):
             self.changed(pid)
         else:
             self.refresh(pid)
+        self.release_nodes()
 
     def set_route_diagnostics(self, participant_id, *, warnings=(), errors=()):
         """Set supplemental diagnostics; counts and tooltips update together."""
@@ -2202,6 +2560,8 @@ class MainWindow(QMainWindow):
             self.confirm_data_deletion("routes", [route.id])
 
     def clear_routes(self):
+        if self.collaboration.mode == "client" or self.collaboration.locks:
+            return
         self.confirm_data_deletion("routes", list(self.data.routes))
 
     def verify_routes(self, selected=None):
@@ -2211,6 +2571,8 @@ class MainWindow(QMainWindow):
         )
 
     def generate_routes(self, *, pre_generate=False):
+        if self.collaboration.mode == "client" or self.collaboration.locks:
+            return
         if self.draft or self.address_worker is not None or self.solver_worker is not None:
             return
         missing = [
@@ -2262,6 +2624,7 @@ class MainWindow(QMainWindow):
         self.update_solver_timer()
         worker.finished.connect(self.solver_finished)
         self.centralWidget().setEnabled(False)
+        self.collaboration.set_busy(True)
         worker.start()
 
     def update_solver_phase(self, message):
@@ -2290,6 +2653,12 @@ class MainWindow(QMainWindow):
         )
 
     def solver_finished(self):
+        try:
+            self.finish_collaborative_solver()
+        finally:
+            self.collaboration.set_busy(False)
+
+    def finish_collaborative_solver(self):
         worker = self.solver_worker
         self.solver_worker = None
         self.solver_timer.stop()
@@ -2390,6 +2759,8 @@ class MainWindow(QMainWindow):
         )
 
     def import_csv(self, kind):
+        if self.collaboration.mode == "client" or self.collaboration.locks:
+            return
         path, _ = QFileDialog.getOpenFileName(
             self,
             tr("Import {0}", tr(kind)),
@@ -2466,6 +2837,8 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, tr("Export failed"), error_text(error))
 
     def export_results(self):
+        if self.collaboration.mode == "client":
+            return
         path, _ = QFileDialog.getSaveFileName(
             self,
             tr("Export results"),
@@ -2572,6 +2945,7 @@ class MainWindow(QMainWindow):
         ):
             event.ignore()
         else:
+            self.collaboration.disconnect()
             event.accept()
 
 

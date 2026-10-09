@@ -27,6 +27,8 @@ The map and distance checks currently use straight-line segments, not cycling-ro
 
 ## Files and shared controls
 
+[Collaboration](Collaboration.md) explains local/VPN hosting, connecting, shared editing, and edit locks.
+
 [Project files and CSV](<Project Files and CSV.md>) explains the top-bar buttons, imports, exports, column mapping, sorting, reference navigation, and deletion.
 
 For installation, see [INSTALL (For Dummies).md](<../INSTALL (For Dummies).md>). For dependencies and developer commands, see the [main README](../README.md).
